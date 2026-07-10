@@ -19,6 +19,8 @@ export const createTaskSchema = z.object({
   title: z.string().min(1, "กรุณากรอกชื่องาน"),
   projectId: z.string().min(1),
   assigneeId: z.string().min(1).nullable().optional(),
+  /** preferred: full set of assignees */
+  assigneeIds: z.array(z.string().min(1)).optional(),
   priority: priority.optional(),
   status: status.optional(),
   dueDate: z.coerce.date().nullable().optional(),
@@ -32,6 +34,7 @@ export const updateTaskSchema = z
     title: z.string().min(1),
     projectId: z.string().min(1),
     assigneeId: z.string().min(1).nullable(),
+    assigneeIds: z.array(z.string().min(1)),
     priority,
     status,
     dueDate: z.coerce.date().nullable(),

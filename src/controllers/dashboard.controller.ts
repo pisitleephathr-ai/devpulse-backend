@@ -153,10 +153,9 @@ export async function insights(_req: Request, res: Response) {
         project: { select: { name: true, code: true, color: true } },
       },
     }),
-    prisma.task.groupBy({
-      by: ["assigneeId", "status"],
-      _count: { _all: true },
-      where: { assigneeId: { not: null } },
+    // Workload counts each assigned user once per task (multi-assignee aware).
+    prisma.taskAssignee.findMany({
+      select: { userId: true, task: { select: { status: true } } },
     }),
     prisma.task.findMany({
       where: { status: "DONE" },
@@ -203,13 +202,12 @@ export async function insights(_req: Request, res: Response) {
     { todo: number; inProgress: number; review: number; done: number }
   >();
   for (const g of workloadGroups) {
-    if (!g.assigneeId) continue;
-    const acc = byUser.get(g.assigneeId) ?? { todo: 0, inProgress: 0, review: 0, done: 0 };
-    if (g.status === "TODO") acc.todo += g._count._all;
-    else if (g.status === "IN_PROGRESS") acc.inProgress += g._count._all;
-    else if (g.status === "REVIEW") acc.review += g._count._all;
-    else if (g.status === "DONE") acc.done += g._count._all;
-    byUser.set(g.assigneeId, acc);
+    const acc = byUser.get(g.userId) ?? { todo: 0, inProgress: 0, review: 0, done: 0 };
+    if (g.task.status === "TODO") acc.todo += 1;
+    else if (g.task.status === "IN_PROGRESS") acc.inProgress += 1;
+    else if (g.task.status === "REVIEW") acc.review += 1;
+    else if (g.task.status === "DONE") acc.done += 1;
+    byUser.set(g.userId, acc);
   }
   const workload = activeUsers
     .map((u) => {

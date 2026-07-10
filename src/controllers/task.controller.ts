@@ -3,15 +3,8 @@ import type { Prisma, TaskStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
-import { notify } from "../lib/notify";
+import { notifyMany } from "../lib/notify";
 import { AppError } from "../middleware/error";
-
-const STATUS_LABEL: Record<TaskStatus, string> = {
-  TODO: "รอดำเนินการ",
-  IN_PROGRESS: "กำลังทำ",
-  REVIEW: "รอตรวจ",
-  DONE: "เสร็จแล้ว",
-};
 import type {
   AttachmentInput,
   CreateTaskInput,
@@ -20,31 +13,57 @@ import type {
   UpdateTaskInput,
 } from "../schemas/task.schema";
 
+const STATUS_LABEL: Record<TaskStatus, string> = {
+  TODO: "รอดำเนินการ",
+  IN_PROGRESS: "กำลังทำ",
+  REVIEW: "รอตรวจ",
+  DONE: "เสร็จแล้ว",
+};
+
 const include = {
   assignee: { select: userMiniSelect },
+  assignees: {
+    include: { user: { select: userMiniSelect } },
+    orderBy: { assignedAt: "asc" },
+  },
   project: { select: { id: true, name: true, code: true, color: true } },
-};
+} satisfies Prisma.TaskInclude;
 
-/** List rows carry link/attachment counts (not the full rows) for card badges. */
 const listInclude = {
   ...include,
-  _count: { select: { links: true, attachments: true } },
-};
+  _count: { select: { links: true, attachments: true, comments: true } },
+} satisfies Prisma.TaskInclude;
 
-/** Detail rows carry the full links + attachments. */
 const detailInclude = {
   ...include,
   links: { orderBy: { createdAt: "asc" } },
   attachments: { orderBy: { createdAt: "asc" } },
 } satisfies Prisma.TaskInclude;
 
+/** Flatten the join rows into a plain `assignees` user array for the client. */
+function flatten<T extends { assignees: { user: unknown }[] }>(task: T) {
+  return { ...task, assignees: task.assignees.map((a) => a.user) };
+}
+
+/** Assignee ids from the request, preferring assigneeIds, falling back to the
+    legacy single assigneeId. De-duplicated. */
+function resolveAssigneeIds(data: {
+  assigneeIds?: string[];
+  assigneeId?: string | null;
+}): string[] {
+  const ids =
+    data.assigneeIds ?? (data.assigneeId ? [data.assigneeId] : []);
+  return [...new Set(ids.filter(Boolean))];
+}
+
 export async function listTasks(req: Request, res: Response) {
   const q = req.query as unknown as TaskQuery;
   const where: Prisma.TaskWhereInput = {
     projectId: q.projectId,
-    assigneeId: q.assigneeId,
     status: q.status,
     priority: q.priority,
+    // Match tasks where the selected user is ANY of the assignees.
+    ...(q.assigneeId ? { assignees: { some: { userId: q.assigneeId } } } : {}),
     ...(q.search
       ? {
           OR: [
@@ -53,9 +72,7 @@ export async function listTasks(req: Request, res: Response) {
           ],
         }
       : {}),
-    ...(q.dueFrom || q.dueTo
-      ? { dueDate: { gte: q.dueFrom, lte: q.dueTo } }
-      : {}),
+    ...(q.dueFrom || q.dueTo ? { dueDate: { gte: q.dueFrom, lte: q.dueTo } } : {}),
   };
 
   const tasks = await prisma.task.findMany({
@@ -63,7 +80,7 @@ export async function listTasks(req: Request, res: Response) {
     include: listInclude,
     orderBy: { createdAt: "asc" },
   });
-  res.json({ tasks });
+  res.json({ tasks: tasks.map(flatten) });
 }
 
 export async function getTask(req: Request, res: Response) {
@@ -72,20 +89,26 @@ export async function getTask(req: Request, res: Response) {
     include: detailInclude,
   });
   if (!task) throw new AppError(404, "ไม่พบงาน");
-  res.json({ task });
+  res.json({ task: flatten(task) });
 }
 
 export async function createTask(req: Request, res: Response) {
   const data = req.body as CreateTaskInput;
+  const assigneeIds = resolveAssigneeIds(data);
+
   const task = await prisma.task.create({
     data: {
       title: data.title.trim(),
       description: data.description?.trim() ?? "",
       projectId: data.projectId,
-      assigneeId: data.assigneeId ?? null,
+      // Keep the legacy primary assignee in sync for backward compatibility.
+      assigneeId: assigneeIds[0] ?? null,
       priority: data.priority ?? "MEDIUM",
       status: data.status ?? "TODO",
       dueDate: data.dueDate ?? null,
+      assignees: assigneeIds.length
+        ? { create: assigneeIds.map((userId) => ({ userId, assignedById: req.user!.id })) }
+        : undefined,
       links: data.links?.length
         ? { create: data.links.map((l) => ({ title: l.title.trim(), url: l.url.trim() })) }
         : undefined,
@@ -111,30 +134,32 @@ export async function createTask(req: Request, res: Response) {
     entityId: task.id,
   });
 
-  // Notify the assignee (unless they assigned it to themselves).
-  if (task.assigneeId && task.assigneeId !== req.user!.id) {
-    await notify({
-      userId: task.assigneeId,
+  await notifyMany(
+    assigneeIds.filter((id) => id !== req.user!.id),
+    {
       type: "task.assigned",
       title: "ได้รับมอบหมายงานใหม่",
       message: `คุณได้รับมอบหมายงาน "${task.title}"`,
       entityType: "task",
       entityId: task.id,
-    });
-  }
+    }
+  );
 
-  res.status(201).json({ task });
+  res.status(201).json({ task: flatten(task) });
 }
 
-/** Managers/admins may edit any task; others only their own assigned task. */
+/** Managers/admins may edit any task; others only tasks they are assigned to. */
 async function assertCanEdit(req: Request, taskId: string) {
   if (req.user!.role === "MANAGER" || req.user!.role === "ADMIN") return;
   const existing = await prisma.task.findUnique({
     where: { id: taskId },
-    select: { assigneeId: true },
+    select: { assigneeId: true, assignees: { select: { userId: true } } },
   });
   if (!existing) throw new AppError(404, "ไม่พบงาน");
-  if (existing.assigneeId !== req.user!.id) {
+  const isAssignee =
+    existing.assigneeId === req.user!.id ||
+    existing.assignees.some((a) => a.userId === req.user!.id);
+  if (!isAssignee) {
     throw new AppError(403, "แก้ไขได้เฉพาะงานที่ได้รับมอบหมายให้คุณ");
   }
 }
@@ -142,15 +167,33 @@ async function assertCanEdit(req: Request, taskId: string) {
 export async function updateTask(req: Request, res: Response) {
   const id = req.params.id;
   await assertCanEdit(req, id);
-  const { links, attachments, ...scalar } = req.body as UpdateTaskInput;
+  const { links, attachments, assigneeIds, ...scalar } =
+    req.body as UpdateTaskInput;
 
   const before = await prisma.task.findUnique({
     where: { id },
-    select: { assigneeId: true },
+    select: { assignees: { select: { userId: true } } },
   });
+  const beforeIds = new Set(before?.assignees.map((a) => a.userId) ?? []);
+  const nextIds = assigneeIds ? [...new Set(assigneeIds.filter(Boolean))] : null;
 
   const task = await prisma.$transaction(async (tx) => {
-    await tx.task.update({ where: { id }, data: scalar });
+    await tx.task.update({
+      where: { id },
+      data: {
+        ...scalar,
+        // Keep the legacy primary in sync when assignees change.
+        ...(nextIds ? { assigneeId: nextIds[0] ?? null } : {}),
+      },
+    });
+
+    if (nextIds) {
+      await tx.taskAssignee.deleteMany({ where: { taskId: id } });
+      if (nextIds.length)
+        await tx.taskAssignee.createMany({
+          data: nextIds.map((userId) => ({ taskId: id, userId, assignedById: req.user!.id })),
+        });
+    }
 
     if (links) {
       await tx.taskLink.deleteMany({ where: { taskId: id } });
@@ -177,29 +220,27 @@ export async function updateTask(req: Request, res: Response) {
 
   await logActivity({
     userId: req.user!.id,
-    action: "task.update",
-    message: `แก้ไขงาน "${task!.title}"`,
+    action: nextIds ? "task.assignees" : "task.update",
+    message: nextIds
+      ? `อัปเดตผู้รับผิดชอบงาน "${task!.title}"`
+      : `แก้ไขงาน "${task!.title}"`,
     entityType: "task",
     entityId: id,
   });
 
-  // Notify a newly-assigned user (assignee changed and isn't the actor).
-  if (
-    task?.assigneeId &&
-    task.assigneeId !== before?.assigneeId &&
-    task.assigneeId !== req.user!.id
-  ) {
-    await notify({
-      userId: task.assigneeId,
+  // Notify only newly-added assignees (not already assigned, not the actor).
+  if (nextIds) {
+    const added = nextIds.filter((uid) => !beforeIds.has(uid) && uid !== req.user!.id);
+    await notifyMany(added, {
       type: "task.assigned",
       title: "ได้รับมอบหมายงาน",
-      message: `คุณได้รับมอบหมายงาน "${task.title}"`,
+      message: `คุณได้รับมอบหมายงาน "${task!.title}"`,
       entityType: "task",
       entityId: id,
     });
   }
 
-  res.json({ task });
+  res.json({ task: flatten(task!) });
 }
 
 export async function updateTaskStatus(req: Request, res: Response) {
@@ -219,19 +260,19 @@ export async function updateTaskStatus(req: Request, res: Response) {
     entityId: task.id,
   });
 
-  // Notify the assignee that their task moved (unless they moved it themselves).
-  if (task.assigneeId && task.assigneeId !== req.user!.id) {
-    await notify({
-      userId: task.assigneeId,
+  // Notify every assignee except whoever moved it.
+  await notifyMany(
+    task.assignees.map((a) => a.userId).filter((uid) => uid !== req.user!.id),
+    {
       type: "task.status",
       title: "สถานะงานเปลี่ยนแปลง",
       message: `"${task.title}" ถูกย้ายไป ${STATUS_LABEL[status]}`,
       entityType: "task",
       entityId: task.id,
-    });
-  }
+    }
+  );
 
-  res.json({ task });
+  res.json({ task: flatten(task) });
 }
 
 export async function deleteTask(req: Request, res: Response) {
@@ -252,9 +293,7 @@ export async function addLink(req: Request, res: Response) {
 
 export async function deleteLink(req: Request, res: Response) {
   await assertCanEdit(req, req.params.taskId);
-  await prisma.taskLink.delete({
-    where: { id: req.params.linkId },
-  });
+  await prisma.taskLink.delete({ where: { id: req.params.linkId } });
   res.status(204).send();
 }
 
@@ -275,8 +314,6 @@ export async function addAttachment(req: Request, res: Response) {
 
 export async function deleteAttachment(req: Request, res: Response) {
   await assertCanEdit(req, req.params.taskId);
-  await prisma.taskAttachment.delete({
-    where: { id: req.params.attachmentId },
-  });
+  await prisma.taskAttachment.delete({ where: { id: req.params.attachmentId } });
   res.status(204).send();
 }

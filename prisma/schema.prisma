@@ -79,6 +79,8 @@ model User {
   activityLogs   ActivityLog[]
   notifications  Notification[]
   taskComments   TaskComment[]
+  taskAssignments TaskAssignee[] @relation("TaskAssigneeUser")
+  taskAssignedBy  TaskAssignee[] @relation("TaskAssignedBy")
 
   @@index([role])
   @@index([roleId])
@@ -153,8 +155,11 @@ model Task {
 
   project     Project          @relation(fields: [projectId], references: [id])
   projectId   String
+  /// legacy single assignee — kept as the "primary" for backward compatibility;
+  /// full set lives in the `assignees` join table
   assignee    User?            @relation(fields: [assigneeId], references: [id])
   assigneeId  String?
+  assignees   TaskAssignee[]
   links       TaskLink[]
   attachments TaskAttachment[]
   comments    TaskComment[]
@@ -162,6 +167,23 @@ model Task {
   @@index([projectId])
   @@index([assigneeId])
   @@index([status])
+}
+
+/// Many-to-many task ⇄ user assignment. A task can have multiple assignees.
+model TaskAssignee {
+  id           String   @id @default(cuid())
+  assignedAt   DateTime @default(now())
+  assignedById String?
+
+  task       Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId     String
+  user       User  @relation("TaskAssigneeUser", fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  assignedBy User? @relation("TaskAssignedBy", fields: [assignedById], references: [id])
+
+  @@unique([taskId, userId])
+  @@index([taskId])
+  @@index([userId])
 }
 
 /// Discussion thread on a task. Soft-deleted (isDeleted) so history is kept.
