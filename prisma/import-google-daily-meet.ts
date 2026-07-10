@@ -303,12 +303,26 @@ async function upsertTask(
     where: { projectId, assigneeId, title, dueDate },
   });
   const payload = { ...data, priority: "MEDIUM" as const };
+  let taskId: string;
+  let created: boolean;
   if (existing) {
     await prisma.task.update({ where: { id: existing.id }, data: payload });
-    return false;
+    taskId = existing.id;
+    created = false;
+  } else {
+    const t = await prisma.task.create({
+      data: { projectId, assigneeId, title, dueDate, ...payload },
+    });
+    taskId = t.id;
+    created = true;
   }
-  await prisma.task.create({ data: { projectId, assigneeId, title, dueDate, ...payload } });
-  return true;
+  // Keep the multi-assignee join in sync (workload/board-by-assignee rely on it).
+  await prisma.taskAssignee.upsert({
+    where: { taskId_userId: { taskId, userId: assigneeId } },
+    update: {},
+    create: { taskId, userId: assigneeId },
+  });
+  return created;
 }
 
 /* -------------------------------- main --------------------------------- */
