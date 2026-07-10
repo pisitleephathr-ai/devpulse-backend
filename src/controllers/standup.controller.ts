@@ -1,0 +1,143 @@
+import type { Request, Response } from "express";
+import { prisma } from "../lib/prisma";
+import { userMiniSelect } from "../lib/selects";
+import { notifyMany } from "../lib/notify";
+
+const NO_BLOCKER = new Set(["", "ไม่มี", "—", "-", "วันนี้ไม่มี", "ไม่มีครับ", "ไม่มีค่ะ"]);
+function cleanBlocker(s: string) {
+  return NO_BLOCKER.has(s.trim()) ? "" : s.trim();
+}
+
+/** Today's date (YYYY-MM-DD) in Asia/Bangkok, computed server-side (UTC+7). */
+function bangkokToday(): string {
+  return new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+}
+
+/** UTC range covering a Bangkok calendar day (reports are stored at UTC midnight). */
+function dayRange(dateStr: string) {
+  const start = new Date(`${dateStr}T00:00:00.000Z`);
+  const end = new Date(start.getTime() + 24 * 3_600_000);
+  return { gte: start, lt: end };
+}
+
+/**
+ * GET /api/standup?date=YYYY-MM-DD — the daily standup summary for a Bangkok day
+ * (defaults to today). Team-wide reports are already visible to any authenticated
+ * user (same as /reports and the dashboard), so this mirrors that visibility.
+ */
+export async function standup(req: Request, res: Response) {
+  const dateStr = (req.query.date as string) || bangkokToday();
+  const range = dayRange(dateStr);
+
+  const today = bangkokToday();
+  const todayStart = new Date(`${today}T00:00:00.000Z`);
+  const todayEnd = new Date(todayStart.getTime() + 24 * 3_600_000);
+
+  const [activeUsers, reports, tasksDueToday] = await Promise.all([
+    prisma.user.findMany({
+      where: { active: true },
+      select: { id: true, name: true, avatarKey: true, requiresDailyReport: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.dailyReport.findMany({
+      where: { date: range },
+      include: {
+        author: { select: userMiniSelect },
+        project: { select: { name: true, code: true, color: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.task.count({
+      where: { status: { not: "DONE" }, dueDate: { gte: todayStart, lt: todayEnd } },
+    }),
+  ]);
+
+  const submittedIds = new Set(reports.map((r) => r.authorId));
+  const required = activeUsers.filter((u) => u.requiresDailyReport);
+  const missingUsers = required
+    .filter((u) => !submittedIds.has(u.id))
+    .map(({ requiresDailyReport, ...u }) => u);
+  const exemptUsers = activeUsers
+    .filter((u) => !u.requiresDailyReport)
+    .map(({ requiresDailyReport, ...u }) => u);
+
+  // Related active tasks (assignee-aware) for each person who submitted.
+  const authorIds = [...submittedIds];
+  const assigned = authorIds.length
+    ? await prisma.taskAssignee.findMany({
+        where: { userId: { in: authorIds }, task: { status: { not: "DONE" } } },
+        select: {
+          userId: true,
+          task: { select: { id: true, title: true, status: true, priority: true } },
+        },
+      })
+    : [];
+  const tasksByUser = new Map<string, (typeof assigned)[number]["task"][]>();
+  for (const a of assigned) {
+    const arr = tasksByUser.get(a.userId) ?? [];
+    if (arr.length < 5) arr.push(a.task);
+    tasksByUser.set(a.userId, arr);
+  }
+
+  const submittedReports = reports.map((r) => ({
+    id: r.id,
+    user: r.author,
+    did: r.did,
+    plan: r.plan,
+    blockers: cleanBlocker(r.blockers),
+    project: r.project,
+    status: r.status,
+    tasks: tasksByUser.get(r.authorId) ?? [],
+  }));
+
+  const blockers = submittedReports
+    .filter((r) => r.blockers.length > 0)
+    .map((r) => ({ id: r.id, user: r.user, text: r.blockers, project: r.project }));
+
+  res.json({
+    date: dateStr,
+    stats: {
+      submitted: reports.length,
+      missing: missingUsers.length,
+      exempt: exemptUsers.length,
+      totalRequired: required.length,
+      blockers: blockers.length,
+      tasksDueToday,
+    },
+    submittedReports,
+    missingUsers,
+    exemptUsers,
+    blockers,
+  });
+}
+
+/**
+ * POST /api/standup/remind — send an in-app reminder to everyone who is active,
+ * required to report, and hasn't submitted for the given (or today's) day.
+ * Manager/admin only (enforced at the route).
+ */
+export async function remind(req: Request, res: Response) {
+  const dateStr = (req.body?.date as string) || bangkokToday();
+  const range = dayRange(dateStr);
+
+  const [required, reports] = await Promise.all([
+    prisma.user.findMany({
+      where: { active: true, requiresDailyReport: true },
+      select: { id: true },
+    }),
+    prisma.dailyReport.findMany({ where: { date: range }, select: { authorId: true } }),
+  ]);
+  const submitted = new Set(reports.map((r) => r.authorId));
+  const missing = required
+    .map((u) => u.id)
+    .filter((id) => !submitted.has(id) && id !== req.user!.id);
+
+  await notifyMany(missing, {
+    type: "report.reminder",
+    title: "อย่าลืมส่งรายงานประจำวัน",
+    message: "กรุณาส่งรายงานประจำวันสำหรับการประชุมเช้า",
+    entityType: "report",
+  });
+
+  res.json({ notified: missing.length });
+}
