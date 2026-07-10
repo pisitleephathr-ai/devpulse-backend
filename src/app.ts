@@ -10,6 +10,8 @@ import reportRoutes from "./routes/report.routes";
 import taskRoutes from "./routes/task.routes";
 import leaveRoutes from "./routes/leave.routes";
 import dashboardRoutes from "./routes/dashboard.routes";
+import calendarRoutes from "./routes/calendar.routes";
+import settingsRoutes from "./routes/settings.routes";
 import { errorHandler, notFound } from "./middleware/error";
 
 const app = express();
@@ -38,6 +40,8 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/tasks", taskRoutes);
 app.use("/api/leaves", leaveRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/calendar", calendarRoutes);
+app.use("/api/settings", settingsRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

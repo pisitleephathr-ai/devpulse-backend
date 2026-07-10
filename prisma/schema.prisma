@@ -162,3 +162,41 @@ model ActivityLog {
   @@index([userId])
   @@index([createdAt])
 }
+
+/* ------------------------- Calendar & Settings ------------------------- */
+
+enum CalendarEventType {
+  LEAVE
+  DEADLINE
+}
+
+model CalendarEvent {
+  id        String            @id @default(cuid())
+  title     String
+  startDate DateTime
+  endDate   DateTime
+  type      CalendarEventType
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([startDate])
+}
+
+model LeaveTypePolicy {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  /// freeform allowance label, e.g. "20 วัน / ปี"
+  daysLabel   String
+  color       String
+  autoApprove Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TeamSetting {
+  id                 String   @id @default(cuid())
+  teamName           String
+  reportReminderTime String
+  updatedAt          DateTime @updatedAt
+}

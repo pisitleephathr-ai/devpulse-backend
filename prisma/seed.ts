@@ -17,6 +17,9 @@ async function main() {
   await prisma.dailyReport.deleteMany();
   await prisma.project.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.calendarEvent.deleteMany();
+  await prisma.leaveTypePolicy.deleteMany();
+  await prisma.teamSetting.deleteMany();
 
   const password = await bcrypt.hash("password123", 10);
 
@@ -157,6 +160,40 @@ async function main() {
     });
   }
 
+  /* --------------------------- Calendar events ------------------------ */
+  const calendarSeed = [
+    { title: "ซาร่า · ลาป่วย", start: "2026-07-08", end: "2026-07-08", type: "LEAVE" },
+    { title: "OAuth ครบกำหนด", start: "2026-07-10", end: "2026-07-10", type: "DEADLINE" },
+    { title: "Push ครบกำหนด", start: "2026-07-11", end: "2026-07-11", type: "DEADLINE" },
+    { title: "Rate limit ครบกำหนด", start: "2026-07-14", end: "2026-07-14", type: "DEADLINE" },
+    { title: "กราฟ v2 ครบกำหนด", start: "2026-07-15", end: "2026-07-15", type: "DEADLINE" },
+    { title: "แผน QA ครบกำหนด", start: "2026-07-16", end: "2026-07-16", type: "DEADLINE" },
+    { title: "ทอม · ลาพักร้อน", start: "2026-07-20", end: "2026-07-24", type: "LEAVE" },
+    { title: "Terraform ครบกำหนด", start: "2026-07-21", end: "2026-07-21", type: "DEADLINE" },
+    { title: "รีลีส 2.4", start: "2026-07-24", end: "2026-07-24", type: "DEADLINE" },
+  ] as const;
+  for (const e of calendarSeed) {
+    await prisma.calendarEvent.create({
+      data: { title: e.title, startDate: d(e.start), endDate: d(e.end), type: e.type },
+    });
+  }
+
+  /* ------------------------- Leave-type policies ---------------------- */
+  const leaveTypeSeed = [
+    { name: "ลาพักร้อน", daysLabel: "20 วัน / ปี", color: "#0d9488", autoApprove: false, sortOrder: 0 },
+    { name: "ลาป่วย", daysLabel: "10 วัน / ปี", color: "#f59e0b", autoApprove: true, sortOrder: 1 },
+    { name: "ลากิจ", daysLabel: "5 วัน / ปี", color: "#8b5cf6", autoApprove: false, sortOrder: 2 },
+    { name: "ลาเลี้ยงดูบุตร", daysLabel: "ตามนโยบายบริษัท", color: "#3b82f6", autoApprove: false, sortOrder: 3 },
+  ];
+  for (const lt of leaveTypeSeed) {
+    await prisma.leaveTypePolicy.create({ data: lt });
+  }
+
+  /* ----------------------------- Team setting ------------------------- */
+  await prisma.teamSetting.create({
+    data: { teamName: "ทีมแพลตฟอร์ม", reportReminderTime: "16:30 น." },
+  });
+
   const counts = {
     users: usersSeed.length,
     projects: projectsSeed.length,
@@ -164,6 +201,8 @@ async function main() {
     tasks: tasksSeed.length,
     leaves: leavesSeed.length,
     activity: activitySeed.length,
+    calendarEvents: calendarSeed.length,
+    leaveTypes: leaveTypeSeed.length,
   };
   console.log("✅ Seed complete:", counts);
   console.log("   Login with any seeded email + password: password123");
