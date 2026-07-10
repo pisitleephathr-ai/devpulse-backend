@@ -1,0 +1,45 @@
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import morgan from "morgan";
+import { env } from "./lib/env";
+import authRoutes from "./routes/auth.routes";
+import userRoutes from "./routes/user.routes";
+import projectRoutes from "./routes/project.routes";
+import reportRoutes from "./routes/report.routes";
+import taskRoutes from "./routes/task.routes";
+import leaveRoutes from "./routes/leave.routes";
+import dashboardRoutes from "./routes/dashboard.routes";
+import { errorHandler, notFound } from "./middleware/error";
+
+const app = express();
+
+app.use(helmet());
+app.use(
+  cors({
+    origin: env.CORS_ORIGIN === "*" ? true : env.CORS_ORIGIN.split(","),
+    credentials: true,
+  })
+);
+app.use(express.json());
+if (env.NODE_ENV !== "test") app.use(morgan("dev"));
+
+app.get("/", (_req, res) => {
+  res.json({ name: "DevPulse API", version: "0.1.0", status: "ok" });
+});
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", time: new Date().toISOString() });
+});
+
+app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/projects", projectRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/tasks", taskRoutes);
+app.use("/api/leaves", leaveRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+
+app.use(notFound);
+app.use(errorHandler);
+
+export default app;
