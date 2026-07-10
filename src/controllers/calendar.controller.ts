@@ -29,7 +29,7 @@ export async function listEvents(req: Request, res: Response) {
 
   const isManager = req.user!.role === "MANAGER" || req.user!.role === "ADMIN";
 
-  const [events, tasks, reports, leaves, holidays] = await Promise.all([
+  const [events, tasks, reports, leaves, holidays, setting] = await Promise.all([
     prisma.calendarEvent.findMany({
       where: { startDate: { lte: endInclusive }, endDate: { gte: start } },
       orderBy: { startDate: "asc" },
@@ -56,7 +56,9 @@ export async function listEvents(req: Request, res: Response) {
       where: { isActive: true, date: { gte: start, lt: endExclusive } },
       orderBy: { date: "asc" },
     }),
+    prisma.teamSetting.findFirst({ select: { workingDays: true } }),
   ]);
+  const workingDays = setting?.workingDays ?? "1,2,3,4,5";
 
   const items = [
     ...events.map((e) => ({
@@ -110,7 +112,7 @@ export async function listEvents(req: Request, res: Response) {
     })),
   ];
 
-  res.json({ items, events });
+  res.json({ items, events, workingDays });
 }
 
 export async function createEvent(req: Request, res: Response) {
