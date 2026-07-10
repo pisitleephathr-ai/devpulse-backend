@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
+import { logActivity } from "../lib/activity";
 import { AppError } from "../middleware/error";
 import type { CreateRoleInput, UpdateRoleInput } from "../schemas/role.schema";
 
@@ -36,6 +37,15 @@ export async function createRole(req: Request, res: Response) {
       isSystem: false,
     },
   });
+
+  await logActivity({
+    userId: req.user!.id,
+    action: "role.create",
+    message: `สร้างบทบาท "${role.name}"`,
+    entityType: "role",
+    entityId: role.id,
+  });
+
   res.status(201).json({ role });
 }
 
@@ -57,6 +67,15 @@ export async function updateRole(req: Request, res: Response) {
       isActive: data.isActive,
     },
   });
+
+  await logActivity({
+    userId: req.user!.id,
+    action: "role.update",
+    message: `แก้ไขบทบาท "${updated.name}"`,
+    entityType: "role",
+    entityId: updated.id,
+  });
+
   res.json({ role: updated });
 }
 
@@ -72,5 +91,14 @@ export async function deleteRole(req: Request, res: Response) {
   }
 
   await prisma.role.delete({ where: { id: role.id } });
+
+  await logActivity({
+    userId: req.user!.id,
+    action: "role.delete",
+    message: `ลบบทบาท "${role.name}"`,
+    entityType: "role",
+    entityId: role.id,
+  });
+
   res.status(204).send();
 }

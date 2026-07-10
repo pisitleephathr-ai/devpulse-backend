@@ -9,6 +9,7 @@ const router = Router();
 router.use(authenticate);
 
 router.get("/summary", asyncHandler(dashboard.summary));
+router.get("/insights", asyncHandler(dashboard.insights));
 router.get("/activity", asyncHandler(activity.listActivity));
 
 export default router;

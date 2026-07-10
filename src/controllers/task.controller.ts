@@ -3,7 +3,15 @@ import type { Prisma, TaskStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
+import { notify } from "../lib/notify";
 import { AppError } from "../middleware/error";
+
+const STATUS_LABEL: Record<TaskStatus, string> = {
+  TODO: "รอดำเนินการ",
+  IN_PROGRESS: "กำลังทำ",
+  REVIEW: "รอตรวจ",
+  DONE: "เสร็จแล้ว",
+};
 import type {
   AttachmentInput,
   CreateTaskInput,
@@ -103,6 +111,18 @@ export async function createTask(req: Request, res: Response) {
     entityId: task.id,
   });
 
+  // Notify the assignee (unless they assigned it to themselves).
+  if (task.assigneeId && task.assigneeId !== req.user!.id) {
+    await notify({
+      userId: task.assigneeId,
+      type: "task.assigned",
+      title: "ได้รับมอบหมายงานใหม่",
+      message: `คุณได้รับมอบหมายงาน "${task.title}"`,
+      entityType: "task",
+      entityId: task.id,
+    });
+  }
+
   res.status(201).json({ task });
 }
 
@@ -123,6 +143,11 @@ export async function updateTask(req: Request, res: Response) {
   const id = req.params.id;
   await assertCanEdit(req, id);
   const { links, attachments, ...scalar } = req.body as UpdateTaskInput;
+
+  const before = await prisma.task.findUnique({
+    where: { id },
+    select: { assigneeId: true },
+  });
 
   const task = await prisma.$transaction(async (tx) => {
     await tx.task.update({ where: { id }, data: scalar });
@@ -150,6 +175,30 @@ export async function updateTask(req: Request, res: Response) {
     return tx.task.findUnique({ where: { id }, include: detailInclude });
   });
 
+  await logActivity({
+    userId: req.user!.id,
+    action: "task.update",
+    message: `แก้ไขงาน "${task!.title}"`,
+    entityType: "task",
+    entityId: id,
+  });
+
+  // Notify a newly-assigned user (assignee changed and isn't the actor).
+  if (
+    task?.assigneeId &&
+    task.assigneeId !== before?.assigneeId &&
+    task.assigneeId !== req.user!.id
+  ) {
+    await notify({
+      userId: task.assigneeId,
+      type: "task.assigned",
+      title: "ได้รับมอบหมายงาน",
+      message: `คุณได้รับมอบหมายงาน "${task.title}"`,
+      entityType: "task",
+      entityId: id,
+    });
+  }
+
   res.json({ task });
 }
 
@@ -165,10 +214,22 @@ export async function updateTaskStatus(req: Request, res: Response) {
   await logActivity({
     userId: req.user!.id,
     action: "task.status",
-    message: `ย้าย "${task.title}" ไป ${status}`,
+    message: `ย้าย "${task.title}" ไป ${STATUS_LABEL[status]}`,
     entityType: "task",
     entityId: task.id,
   });
+
+  // Notify the assignee that their task moved (unless they moved it themselves).
+  if (task.assigneeId && task.assigneeId !== req.user!.id) {
+    await notify({
+      userId: task.assigneeId,
+      type: "task.status",
+      title: "สถานะงานเปลี่ยนแปลง",
+      message: `"${task.title}" ถูกย้ายไป ${STATUS_LABEL[status]}`,
+      entityType: "task",
+      entityId: task.id,
+    });
+  }
 
   res.json({ task });
 }

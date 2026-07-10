@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { hashPassword, verifyPassword } from "../lib/password";
 import { userPublicSelect, serializeUser } from "../lib/selects";
+import { logActivity } from "../lib/activity";
 import { AppError } from "../middleware/error";
 import type {
   ChangePasswordInput,
@@ -26,6 +27,15 @@ export async function updateProfile(req: Request, res: Response) {
     data: { name: data.name, avatarKey: data.avatarKey },
     select: userPublicSelect,
   });
+
+  await logActivity({
+    userId: req.user!.id,
+    action: "profile.update",
+    message: `${user.name} อัปเดตโปรไฟล์`,
+    entityType: "user",
+    entityId: user.id,
+  });
+
   res.json({ user: serializeUser(user) });
 }
 
@@ -45,6 +55,14 @@ export async function changePassword(req: Request, res: Response) {
   await prisma.user.update({
     where: { id: user.id },
     data: { password: await hashPassword(newPassword) },
+  });
+
+  await logActivity({
+    userId: req.user!.id,
+    action: "password.change",
+    message: "เปลี่ยนรหัสผ่าน",
+    entityType: "user",
+    entityId: user.id,
   });
 
   res.json({ message: "เปลี่ยนรหัสผ่านเรียบร้อยแล้ว" });

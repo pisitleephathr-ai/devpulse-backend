@@ -82,6 +82,15 @@ export async function updateUser(req: Request, res: Response) {
     },
     select: userPublicSelect,
   });
+
+  await logActivity({
+    userId: req.user!.id,
+    action: "user.update",
+    message: `แก้ไขข้อมูลผู้ใช้ ${user.name}`,
+    entityType: "user",
+    entityId: user.id,
+  });
+
   res.json({ user: serializeUser(user) });
 }
 

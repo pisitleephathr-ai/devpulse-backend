@@ -74,6 +74,7 @@ model User {
   leaveRequests  LeaveRequest[] @relation("LeaveRequester")
   reviewedLeaves LeaveRequest[] @relation("LeaveReviewer")
   activityLogs   ActivityLog[]
+  notifications  Notification[]
 
   @@index([role])
   @@index([roleId])
@@ -213,6 +214,27 @@ model ActivityLog {
   userId String
 
   @@index([userId])
+  @@index([createdAt])
+}
+
+/// In-app notifications shown in the header bell. Created on important events
+/// (task assigned, task status changed, leave submitted/approved/rejected).
+model Notification {
+  id         String   @id @default(cuid())
+  /// machine key, e.g. "task.assigned", "leave.approved"
+  type       String
+  title      String
+  message    String
+  entityType String?
+  entityId   String?
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@index([userId])
+  @@index([userId, isRead])
   @@index([createdAt])
 }
 

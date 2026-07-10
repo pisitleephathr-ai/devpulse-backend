@@ -3,7 +3,20 @@ import type { LeaveStatus, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
+import { notify, notifyMany } from "../lib/notify";
 import { AppError } from "../middleware/error";
+
+/** Ids of active managers/admins (recipients of leave-request notifications). */
+async function managerIds(): Promise<string[]> {
+  const managers = await prisma.user.findMany({
+    where: {
+      active: true,
+      roleRef: { code: { in: ["MANAGER", "ADMIN"] } },
+    },
+    select: { id: true },
+  });
+  return managers.map((m) => m.id);
+}
 import type { CreateLeaveInput, LeaveQuery } from "../schemas/leave.schema";
 
 const include = {
@@ -79,6 +92,16 @@ export async function createLeave(req: Request, res: Response) {
     entityId: leave.id,
   });
 
+  // Notify managers/admins (excluding the requester if they are one).
+  const recipients = (await managerIds()).filter((id) => id !== leave.userId);
+  await notifyMany(recipients, {
+    type: "leave.submitted",
+    title: "คำขอลาใหม่",
+    message: `${leave.user.name} ขอ${TYPE_LABEL[leave.type]} ${leave.days} วัน`,
+    entityType: "leave",
+    entityId: leave.id,
+  });
+
   res.status(201).json({ leave });
 }
 
@@ -107,6 +130,18 @@ async function decide(req: Request, res: Response, status: LeaveStatus) {
     entityType: "leave",
     entityId: leave.id,
   });
+
+  // Notify the requester of the decision (unless they reviewed their own).
+  if (leave.userId !== req.user!.id) {
+    await notify({
+      userId: leave.userId,
+      type: status === "APPROVED" ? "leave.approved" : "leave.rejected",
+      title: status === "APPROVED" ? "คำขอลาได้รับอนุมัติ" : "คำขอลาถูกปฏิเสธ",
+      message: `คำขอ${TYPE_LABEL[leave.type]}ของคุณถูก${verb}แล้ว`,
+      entityType: "leave",
+      entityId: leave.id,
+    });
+  }
 
   res.json({ leave });
 }

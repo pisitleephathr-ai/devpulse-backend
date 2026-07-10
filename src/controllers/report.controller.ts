@@ -106,6 +106,15 @@ export async function updateReport(req: Request, res: Response) {
     data: req.body as UpdateReportInput,
     include,
   });
+
+  await logActivity({
+    userId: req.user!.id,
+    action: "report.update",
+    message: `แก้ไขรายงานของ ${report.author.name}`,
+    entityType: "report",
+    entityId: report.id,
+  });
+
   res.json({ report });
 }
 
