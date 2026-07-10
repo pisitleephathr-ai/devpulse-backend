@@ -65,7 +65,21 @@ export async function createTask(req: Request, res: Response) {
   res.status(201).json({ task });
 }
 
+/** Managers/admins may edit any task; others only their own assigned task. */
+async function assertCanEdit(req: Request) {
+  if (req.user!.role === "MANAGER" || req.user!.role === "ADMIN") return;
+  const existing = await prisma.task.findUnique({
+    where: { id: req.params.id },
+    select: { assigneeId: true },
+  });
+  if (!existing) throw new AppError(404, "ไม่พบงาน");
+  if (existing.assigneeId !== req.user!.id) {
+    throw new AppError(403, "แก้ไขได้เฉพาะงานที่ได้รับมอบหมายให้คุณ");
+  }
+}
+
 export async function updateTask(req: Request, res: Response) {
+  await assertCanEdit(req);
   const task = await prisma.task.update({
     where: { id: req.params.id },
     data: req.body as UpdateTaskInput,
@@ -75,6 +89,7 @@ export async function updateTask(req: Request, res: Response) {
 }
 
 export async function updateTaskStatus(req: Request, res: Response) {
+  await assertCanEdit(req);
   const status = (req.body as { status: TaskStatus }).status;
   const task = await prisma.task.update({
     where: { id: req.params.id },

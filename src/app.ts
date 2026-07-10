@@ -5,6 +5,7 @@ import morgan from "morgan";
 import { env } from "./lib/env";
 import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/user.routes";
+import roleRoutes from "./routes/role.routes";
 import projectRoutes from "./routes/project.routes";
 import reportRoutes from "./routes/report.routes";
 import taskRoutes from "./routes/task.routes";
@@ -35,6 +36,7 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/roles", roleRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/daily-reports", reportRoutes); // alias

@@ -25,8 +25,10 @@ function inclusiveDays(start: Date, end: Date) {
 
 export async function listLeaves(req: Request, res: Response) {
   const q = req.query as unknown as LeaveQuery;
+  const isManager = req.user!.role === "MANAGER" || req.user!.role === "ADMIN";
   const where: Prisma.LeaveRequestWhereInput = {
-    userId: q.userId,
+    // Non-managers only see their own requests; managers/admins see all.
+    userId: isManager ? q.userId : req.user!.id,
     type: q.type,
     status: q.status,
   };

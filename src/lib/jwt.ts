@@ -1,10 +1,9 @@
 import jwt, { type SignOptions } from "jsonwebtoken";
-import type { Role } from "@prisma/client";
 import { env } from "./env";
 
 export type JwtPayload = {
   sub: string; // user id
-  role: Role;
+  role: string; // role code, e.g. "ADMIN", "DESIGNER"
 };
 
 export function signToken(payload: JwtPayload): string {

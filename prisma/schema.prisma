@@ -11,7 +11,9 @@ datasource db {
 
 /* ----------------------------- Enums ----------------------------- */
 
-enum Role {
+/// Legacy role enum, kept only for backward compatibility on existing rows.
+/// Role assignment now uses the dynamic Role table via User.roleId.
+enum UserRole {
   MANAGER
   ADMIN
   DEVELOPER
@@ -53,16 +55,19 @@ enum LeaveStatus {
 /* ----------------------------- Models ---------------------------- */
 
 model User {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   name      String
-  email     String   @unique
+  email     String    @unique
   password  String
-  role      Role     @default(DEVELOPER)
+  /// legacy enum — retained for backward compatibility; roleId is the source of truth
+  role      UserRole? @default(DEVELOPER)
+  roleId    String?
+  roleRef   Role?     @relation(fields: [roleId], references: [id], onDelete: SetNull)
   /// short key used by the frontend to pick avatar colors, e.g. "Maya"
   avatarKey String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   reports        DailyReport[]
   assignedTasks  Task[]
@@ -71,6 +76,22 @@ model User {
   activityLogs   ActivityLog[]
 
   @@index([role])
+  @@index([roleId])
+}
+
+/// Dynamic, admin-managed roles. Replaces the hardcoded UserRole enum.
+model Role {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  description String   @default("")
+  /// system roles cannot be deleted
+  isSystem    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users User[]
 }
 
 model Project {

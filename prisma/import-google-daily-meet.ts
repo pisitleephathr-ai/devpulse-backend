@@ -36,6 +36,7 @@ import "dotenv/config";
 import { PrismaClient, type TaskStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import Papa from "papaparse";
+import { DEFAULT_ROLES } from "../src/lib/roles";
 
 const prisma = new PrismaClient();
 
@@ -46,8 +47,9 @@ const DEFAULT_PASSWORD = "password123";
 const REPLACE = process.argv.includes("--replace");
 const REPLACE_DEMO = process.argv.includes("--replace-demo");
 
-// Boss is the team lead → keep an admin/manager account among the real users.
-const ROLE_BY_TAB: Record<string, "MANAGER" | "DEVELOPER"> = { Boss: "MANAGER" };
+// Boss is the team lead → the real team's ADMIN (can manage roles/users/settings).
+const ROLE_BY_TAB: Record<string, string> = { Boss: "ADMIN" };
+const LEGACY_ENUM = ["MANAGER", "ADMIN", "DEVELOPER", "QA"];
 
 // The exact records the original seed (prisma/seed.ts) created — used only by
 // --replace-demo. Matched by stable natural keys so nothing else is touched.
@@ -184,17 +186,37 @@ function parseTab(rows: string[][]): Block[] {
 
 /* ------------------------------ upserts -------------------------------- */
 
-async function upsertUser(tab: string, passwordHash: string) {
+/** Ensure the default roles exist; return a code → roleId map. */
+async function ensureRoles(): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+  for (const r of DEFAULT_ROLES) {
+    const role = await prisma.role.upsert({
+      where: { code: r.code },
+      update: { name: r.name, description: r.description, isSystem: true },
+      create: { code: r.code, name: r.name, description: r.description, isSystem: true, isActive: true },
+    });
+    map[r.code] = role.id;
+  }
+  return map;
+}
+
+async function upsertUser(tab: string, passwordHash: string, roleIds: Record<string, string>) {
   const email = `${tab.toLowerCase()}@devpulse.io`;
-  const role = ROLE_BY_TAB[tab] ?? "DEVELOPER";
+  const code = ROLE_BY_TAB[tab] ?? "DEVELOPER";
+  const roleId = roleIds[code] ?? roleIds["DEVELOPER"];
+  // keep the legacy enum in sync when the code is a valid enum value
+  const legacy = LEGACY_ENUM.includes(code)
+    ? (code as "MANAGER" | "ADMIN" | "DEVELOPER" | "QA")
+    : null;
   return prisma.user.upsert({
     where: { email },
-    update: { name: tab, avatarKey: tab, active: true, role },
+    update: { name: tab, avatarKey: tab, active: true, roleId, role: legacy },
     create: {
       name: tab,
       email,
       password: passwordHash,
-      role,
+      roleId,
+      role: legacy,
       avatarKey: tab,
       active: true,
     },
@@ -299,6 +321,8 @@ async function main() {
 
   if (REPLACE_DEMO) await replaceDemo();
 
+  const roleIds = await ensureRoles();
+
   const project = await prisma.project.upsert({
     where: { code: PROJECT.code },
     update: { name: PROJECT.name, color: PROJECT.color },
@@ -326,7 +350,7 @@ async function main() {
     const rows = await fetchTabCsv(tab);
     const blocks = parseTab(rows);
 
-    const user = await upsertUser(tab, passwordHash);
+    const user = await upsertUser(tab, passwordHash, roleIds);
     stats.usersUpserted++;
 
     let tabReports = 0;

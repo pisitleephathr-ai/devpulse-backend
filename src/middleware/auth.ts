@@ -18,17 +18,18 @@ export async function authenticate(
     const token = header.slice(7);
     const payload = verifyToken(token);
 
-    // Confirm the user still exists and is active.
+    // Confirm the user still exists and is active. Read the current role from
+    // the DB (via roleRef) so role changes take effect immediately.
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, role: true, active: true },
+      select: { id: true, role: true, active: true, roleRef: { select: { code: true } } },
     });
 
     if (!user || !user.active) {
       throw new AppError(401, "บัญชีถูกปิดใช้งานหรือไม่พบผู้ใช้ (Unauthorized)");
     }
 
-    req.user = { id: user.id, role: user.role };
+    req.user = { id: user.id, role: user.roleRef?.code ?? user.role ?? "DEVELOPER" };
     next();
   } catch (err) {
     if (err instanceof AppError) return next(err);

@@ -15,8 +15,9 @@ const router = Router();
 
 router.use(authenticate);
 
+// Settings are manager/admin only (developers/QA/designer cannot access).
 // Team / workspace settings
-router.get("/", asyncHandler(ctrl.getSettings));
+router.get("/", isManagerOrAdmin, asyncHandler(ctrl.getSettings));
 router.patch(
   "/",
   isManagerOrAdmin,
