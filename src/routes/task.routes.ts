@@ -5,7 +5,9 @@ import { isManagerOrAdmin } from "../middleware/authorize";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/error";
 import {
+  attachmentSchema,
   createTaskSchema,
+  linkSchema,
   taskQuerySchema,
   updateStatusSchema,
   updateTaskSchema,
@@ -35,5 +37,17 @@ router.patch(
   validate({ params: idParam, body: updateStatusSchema }),
   asyncHandler(ctrl.updateTaskStatus)
 );
+
+// Reference links
+router.post("/:id/links", validate({ body: linkSchema }), asyncHandler(ctrl.addLink));
+router.delete("/:taskId/links/:linkId", asyncHandler(ctrl.deleteLink));
+
+// Attachments (URL-only metadata)
+router.post(
+  "/:id/attachments",
+  validate({ body: attachmentSchema }),
+  asyncHandler(ctrl.addAttachment)
+);
+router.delete("/:taskId/attachments/:attachmentId", asyncHandler(ctrl.deleteAttachment));
 
 export default router;
