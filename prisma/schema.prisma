@@ -78,6 +78,7 @@ model User {
   reviewedLeaves LeaveRequest[] @relation("LeaveReviewer")
   activityLogs   ActivityLog[]
   notifications  Notification[]
+  taskComments   TaskComment[]
 
   @@index([role])
   @@index([roleId])
@@ -99,16 +100,23 @@ model Role {
 }
 
 model Project {
-  id        String   @id @default(cuid())
-  name      String   @unique
+  id          String    @id @default(cuid())
+  name        String    @unique
   /// short code shown on task cards, e.g. "ATLAS"
-  code      String   @unique
-  color     String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  code        String    @unique
+  color       String
+  description String    @default("")
+  /// free-form lifecycle status, e.g. "ACTIVE" | "ON_HOLD" | "COMPLETED"
+  status      String    @default("ACTIVE")
+  isArchived  Boolean   @default(false)
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   reports DailyReport[]
   tasks   Task[]
+
+  @@index([isArchived])
 }
 
 model DailyReport {
@@ -149,10 +157,30 @@ model Task {
   assigneeId  String?
   links       TaskLink[]
   attachments TaskAttachment[]
+  comments    TaskComment[]
 
   @@index([projectId])
   @@index([assigneeId])
   @@index([status])
+}
+
+/// Discussion thread on a task. Soft-deleted (isDeleted) so history is kept.
+model TaskComment {
+  id        String    @id @default(cuid())
+  message   String
+  isEdited  Boolean   @default(false)
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  task     Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId   String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId String
+
+  @@index([taskId])
+  @@index([authorId])
 }
 
 model TaskLink {

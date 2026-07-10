@@ -29,6 +29,18 @@ router.patch(
   validate({ params: idParam, body: updateProjectSchema }),
   asyncHandler(ctrl.updateProject)
 );
+router.patch(
+  "/:id/archive",
+  isManagerOrAdmin,
+  validate({ params: idParam }),
+  asyncHandler(ctrl.archiveProject)
+);
+router.patch(
+  "/:id/restore",
+  isManagerOrAdmin,
+  validate({ params: idParam }),
+  asyncHandler(ctrl.restoreProject)
+);
 router.delete(
   "/:id",
   authorize("ADMIN"),

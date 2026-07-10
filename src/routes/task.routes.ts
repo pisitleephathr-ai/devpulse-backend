@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as ctrl from "../controllers/task.controller";
+import * as comments from "../controllers/comment.controller";
 import { authenticate } from "../middleware/auth";
 import { isManagerOrAdmin } from "../middleware/authorize";
 import { validate } from "../middleware/validate";
@@ -12,6 +13,7 @@ import {
   updateStatusSchema,
   updateTaskSchema,
 } from "../schemas/task.schema";
+import { createCommentSchema, updateCommentSchema } from "../schemas/comment.schema";
 import { idParam } from "../schemas/common.schema";
 
 const router = Router();
@@ -49,5 +51,20 @@ router.post(
   asyncHandler(ctrl.addAttachment)
 );
 router.delete("/:taskId/attachments/:attachmentId", asyncHandler(ctrl.deleteAttachment));
+
+// Comments — any authenticated user can view/add; author edits/deletes own,
+// managers/admins moderate (enforced in the controller).
+router.get("/:taskId/comments", asyncHandler(comments.listComments));
+router.post(
+  "/:taskId/comments",
+  validate({ body: createCommentSchema }),
+  asyncHandler(comments.createComment)
+);
+router.patch(
+  "/:taskId/comments/:commentId",
+  validate({ body: updateCommentSchema }),
+  asyncHandler(comments.updateComment)
+);
+router.delete("/:taskId/comments/:commentId", asyncHandler(comments.deleteComment));
 
 export default router;
