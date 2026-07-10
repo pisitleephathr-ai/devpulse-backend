@@ -20,6 +20,7 @@
     "migrate:deploy": "prisma migrate deploy",
     "seed": "tsx prisma/seed.ts",
     "seed:roles": "tsx prisma/seed-roles.ts",
+    "seed:holidays": "tsx prisma/seed-holidays.ts",
     "import:daily-meet": "tsx prisma/import-google-daily-meet.ts",
     "studio": "prisma studio",
     "db:reset": "prisma migrate reset"
