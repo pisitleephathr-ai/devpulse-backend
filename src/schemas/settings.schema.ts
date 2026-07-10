@@ -4,6 +4,17 @@ export const updateSettingsSchema = z
   .object({
     teamName: z.string().min(1),
     reportReminderTime: z.string().min(1),
+    timezone: z.string().min(1),
+    // comma-separated weekday numbers 0-6
+    workingDays: z.string().regex(/^([0-6](,[0-6])*)?$/, "รูปแบบวันทำงานไม่ถูกต้อง"),
+    reportDueTime: z.string().min(1),
+    requireDailyReportDefault: z.boolean(),
+    allowHalfDayLeave: z.boolean(),
+    notifyReportReminder: z.boolean(),
+    notifyLeaveApproval: z.boolean(),
+    notifyTaskDue: z.boolean(),
+    // comma-separated menu ids
+    menuOrder: z.string(),
   })
   .partial();
 
@@ -17,6 +28,19 @@ export const createLeaveTypeSchema = z.object({
 
 export const updateLeaveTypeSchema = createLeaveTypeSchema.partial();
 
+export const createHolidaySchema = z.object({
+  name: z.string().min(1),
+  // YYYY-MM-DD (Bangkok calendar day)
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "ต้องเป็นวันที่ YYYY-MM-DD"),
+  description: z.string().optional(),
+  type: z.enum(["COMPANY", "PUBLIC", "SPECIAL"]).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const updateHolidaySchema = createHolidaySchema.partial();
+
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
 export type CreateLeaveTypeInput = z.infer<typeof createLeaveTypeSchema>;
 export type UpdateLeaveTypeInput = z.infer<typeof updateLeaveTypeSchema>;
+export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;
+export type UpdateHolidayInput = z.infer<typeof updateHolidaySchema>;

@@ -36,6 +36,21 @@ function inclusiveDays(start: Date, end: Date) {
   return Math.max(1, Math.round(ms / 86_400_000) + 1);
 }
 
+/** Half-day leave counts as 0.5; otherwise the inclusive whole-day count. */
+function computeDays(start: Date, end: Date, half?: string | null) {
+  return half ? 0.5 : inclusiveDays(start, end);
+}
+
+const HALF_LABEL: Record<string, string> = {
+  MORNING: "ครึ่งวันเช้า",
+  AFTERNOON: "ครึ่งวันบ่าย",
+};
+
+/** e.g. "1 วัน" or "0.5 วัน (ครึ่งวันเช้า)" */
+function daysLabel(days: number, half?: string | null) {
+  return half ? `${days} วัน (${HALF_LABEL[half] ?? "ครึ่งวัน"})` : `${days} วัน`;
+}
+
 export async function listLeaves(req: Request, res: Response) {
   const q = req.query as unknown as LeaveQuery;
   const isManager = req.user!.role === "MANAGER" || req.user!.role === "ADMIN";
@@ -82,7 +97,8 @@ export async function createLeave(req: Request, res: Response) {
       type: data.type,
       startDate: data.startDate,
       endDate: data.endDate,
-      days: inclusiveDays(data.startDate, data.endDate),
+      days: computeDays(data.startDate, data.endDate, data.halfDayPeriod),
+      halfDayPeriod: data.halfDayPeriod ?? null,
       reason: data.reason.trim(),
       status: "PENDING",
     },
@@ -102,7 +118,7 @@ export async function createLeave(req: Request, res: Response) {
   await notifyMany(recipients, {
     type: "leave.submitted",
     title: "คำขอลาใหม่",
-    message: `${leave.user.name} ขอ${TYPE_LABEL[leave.type]} ${leave.days} วัน`,
+    message: `${leave.user.name} ขอ${TYPE_LABEL[leave.type]} ${daysLabel(leave.days, leave.halfDayPeriod)}`,
     entityType: "leave",
     entityId: leave.id,
   });

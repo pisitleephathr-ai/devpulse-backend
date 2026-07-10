@@ -29,7 +29,7 @@ export async function listEvents(req: Request, res: Response) {
 
   const isManager = req.user!.role === "MANAGER" || req.user!.role === "ADMIN";
 
-  const [events, tasks, reports, leaves] = await Promise.all([
+  const [events, tasks, reports, leaves, holidays] = await Promise.all([
     prisma.calendarEvent.findMany({
       where: { startDate: { lte: endInclusive }, endDate: { gte: start } },
       orderBy: { startDate: "asc" },
@@ -51,6 +51,10 @@ export async function listEvents(req: Request, res: Response) {
         ...(isManager ? {} : { userId: req.user!.id }),
       },
       include: { user: { select: userMiniSelect } },
+    }),
+    prisma.companyHoliday.findMany({
+      where: { isActive: true, date: { gte: start, lt: endExclusive } },
+      orderBy: { date: "asc" },
     }),
   ]);
 
@@ -92,7 +96,17 @@ export async function listEvents(req: Request, res: Response) {
       endDate: l.endDate,
       user: l.user,
       status: l.status,
+      halfDayPeriod: l.halfDayPeriod,
       entityId: l.id,
+    })),
+    ...holidays.map((h) => ({
+      id: `holiday_${h.id}`,
+      type: "HOLIDAY" as const,
+      title: h.name,
+      date: h.date,
+      description: h.description,
+      holidayType: h.type,
+      entityId: h.id,
     })),
   ];
 

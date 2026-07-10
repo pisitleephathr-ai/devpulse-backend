@@ -238,7 +238,10 @@ model LeaveRequest {
   type      LeaveType
   startDate DateTime
   endDate   DateTime
-  days      Int
+  /// number of leave days; supports halves (0.5) for half-day leave
+  days      Float
+  /// null = full day; "MORNING" | "AFTERNOON" for a same-day half-day leave
+  halfDayPeriod String?
   reason    String
   status    LeaveStatus @default(PENDING)
   createdAt DateTime    @default(now())
@@ -317,14 +320,44 @@ model LeaveTypePolicy {
   daysLabel   String
   color       String
   autoApprove Boolean  @default(false)
+  /// archived types are hidden from pickers but kept for historical reference
+  isActive    Boolean  @default(true)
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+/// Company / public / special non-working days shown on the calendar.
+model CompanyHoliday {
+  id          String   @id @default(cuid())
+  name        String
+  /// stored at UTC midnight of the Bangkok calendar day
+  date        DateTime
+  description String   @default("")
+  /// "COMPANY" | "PUBLIC" | "SPECIAL"
+  type        String   @default("COMPANY")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
 }
 
 model TeamSetting {
   id                 String   @id @default(cuid())
   teamName           String
   reportReminderTime String
+  /// organization defaults / policy — all additive with safe defaults
+  timezone                  String  @default("Asia/Bangkok")
+  /// comma-separated weekday numbers that are working days (0=Sun … 6=Sat)
+  workingDays               String  @default("1,2,3,4,5")
+  reportDueTime             String  @default("08:30")
+  requireDailyReportDefault Boolean @default(true)
+  allowHalfDayLeave         Boolean @default(true)
+  notifyReportReminder      Boolean @default(true)
+  notifyLeaveApproval       Boolean @default(true)
+  notifyTaskDue             Boolean @default(true)
+  /// comma-separated menu ids defining sidebar order (empty = default order)
+  menuOrder                 String  @default("")
   updatedAt          DateTime @updatedAt
 }

@@ -5,7 +5,9 @@ import { isManagerOrAdmin } from "../middleware/authorize";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/error";
 import {
+  createHolidaySchema,
   createLeaveTypeSchema,
+  updateHolidaySchema,
   updateLeaveTypeSchema,
   updateSettingsSchema,
 } from "../schemas/settings.schema";
@@ -44,6 +46,27 @@ router.delete(
   isManagerOrAdmin,
   validate({ params: idParam }),
   asyncHandler(ctrl.deleteLeaveType)
+);
+
+// Company holidays — read by any authed user (calendar), managed by manager/admin
+router.get("/holidays", asyncHandler(ctrl.listHolidays));
+router.post(
+  "/holidays",
+  isManagerOrAdmin,
+  validate({ body: createHolidaySchema }),
+  asyncHandler(ctrl.createHoliday)
+);
+router.patch(
+  "/holidays/:id",
+  isManagerOrAdmin,
+  validate({ params: idParam, body: updateHolidaySchema }),
+  asyncHandler(ctrl.updateHoliday)
+);
+router.delete(
+  "/holidays/:id",
+  isManagerOrAdmin,
+  validate({ params: idParam }),
+  asyncHandler(ctrl.deleteHoliday)
 );
 
 export default router;
