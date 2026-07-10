@@ -13,7 +13,46 @@ import type {
 const include = {
   author: { select: userMiniSelect },
   project: { select: { id: true, name: true, code: true, color: true } },
-};
+  relatedTasks: {
+    include: {
+      task: {
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          priority: true,
+          project: { select: { id: true, code: true, color: true, name: true } },
+        },
+      },
+    },
+    orderBy: { createdAt: "asc" as const },
+  },
+} satisfies Prisma.DailyReportInclude;
+
+/** Flatten the join rows into a plain `relatedTasks` array for the client. */
+function serialize<T extends { relatedTasks: { task: unknown }[] }>(report: T) {
+  const { relatedTasks, ...rest } = report;
+  return { ...rest, relatedTasks: relatedTasks.map((rt) => rt.task) };
+}
+
+/**
+ * Validate optional related task ids. Reports may reference any accessible
+ * task (not restricted to the report's project). Returns the de-duplicated
+ * id list; throws 400 if any id does not exist.
+ */
+async function resolveRelatedTaskIds(
+  taskIds: string[] | undefined
+): Promise<string[]> {
+  const ids = [...new Set((taskIds ?? []).filter(Boolean))];
+  if (ids.length === 0) return ids;
+  const found = await prisma.task.findMany({
+    where: { id: { in: ids } },
+    select: { id: true },
+  });
+  if (found.length !== ids.length)
+    throw new AppError(400, "มีงานที่เลือกไม่ถูกต้อง");
+  return ids;
+}
 
 function summarize(did: string) {
   const s = did.trim().replace(/\s+/g, " ");
@@ -42,7 +81,7 @@ export async function listReports(req: Request, res: Response) {
     include,
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
   });
-  res.json({ reports });
+  res.json({ reports: reports.map(serialize) });
 }
 
 export async function getReport(req: Request, res: Response) {
@@ -51,7 +90,7 @@ export async function getReport(req: Request, res: Response) {
     include,
   });
   if (!report) throw new AppError(404, "ไม่พบรายงาน");
-  res.json({ report });
+  res.json({ report: serialize(report) });
 }
 
 export async function createReport(req: Request, res: Response) {
@@ -64,6 +103,8 @@ export async function createReport(req: Request, res: Response) {
       ? data.authorId
       : req.user!.id;
 
+  const relatedTaskIds = await resolveRelatedTaskIds(data.relatedTaskIds);
+
   const report = await prisma.dailyReport.create({
     data: {
       authorId,
@@ -74,6 +115,14 @@ export async function createReport(req: Request, res: Response) {
       blockers: data.blockers?.trim() ?? "",
       plan: data.plan?.trim() ?? "",
       status: data.status ?? "SUBMITTED",
+      relatedTasks: relatedTaskIds.length
+        ? {
+            create: relatedTaskIds.map((taskId) => ({
+              taskId,
+              createdById: req.user!.id,
+            })),
+          }
+        : undefined,
     },
     include,
   });
@@ -89,33 +138,51 @@ export async function createReport(req: Request, res: Response) {
     entityId: report.id,
   });
 
-  res.status(201).json({ report });
+  res.status(201).json({ report: serialize(report) });
 }
 
 export async function updateReport(req: Request, res: Response) {
+  const id = req.params.id;
   const existing = await prisma.dailyReport.findUnique({
-    where: { id: req.params.id },
+    where: { id },
     select: { authorId: true },
   });
   if (!existing) throw new AppError(404, "ไม่พบรายงาน");
   if (!canManage(req, existing.authorId))
     throw new AppError(403, "ไม่มีสิทธิ์แก้ไขรายงานนี้");
 
-  const report = await prisma.dailyReport.update({
-    where: { id: req.params.id },
-    data: req.body as UpdateReportInput,
-    include,
+  const { relatedTaskIds, ...scalar } = req.body as UpdateReportInput;
+  // Only touch links when the field is explicitly present in the payload.
+  const nextTaskIds =
+    relatedTaskIds !== undefined
+      ? await resolveRelatedTaskIds(relatedTaskIds)
+      : undefined;
+
+  const report = await prisma.$transaction(async (tx) => {
+    await tx.dailyReport.update({ where: { id }, data: scalar });
+    if (nextTaskIds !== undefined) {
+      await tx.dailyReportRelatedTask.deleteMany({ where: { reportId: id } });
+      if (nextTaskIds.length)
+        await tx.dailyReportRelatedTask.createMany({
+          data: nextTaskIds.map((taskId) => ({
+            reportId: id,
+            taskId,
+            createdById: req.user!.id,
+          })),
+        });
+    }
+    return tx.dailyReport.findUnique({ where: { id }, include });
   });
 
   await logActivity({
     userId: req.user!.id,
     action: "report.update",
-    message: `แก้ไขรายงานของ ${report.author.name}`,
+    message: `แก้ไขรายงานของ ${report!.author.name}`,
     entityType: "report",
-    entityId: report.id,
+    entityId: report!.id,
   });
 
-  res.json({ report });
+  res.json({ report: serialize(report!) });
 }
 
 export async function deleteReport(req: Request, res: Response) {

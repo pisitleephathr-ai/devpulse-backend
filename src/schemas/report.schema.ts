@@ -12,6 +12,8 @@ export const createReportSchema = z.object({
   status: status.optional(),
   /** managers may file a report on behalf of another member */
   authorId: z.string().min(1).optional(),
+  /** optional board tasks this report references (never required) */
+  relatedTaskIds: z.array(z.string().min(1)).optional(),
 });
 
 export const updateReportSchema = z
@@ -23,6 +25,8 @@ export const updateReportSchema = z
     blockers: z.string(),
     plan: z.string(),
     status,
+    /** when provided, replaces the full set of linked tasks (empty clears) */
+    relatedTaskIds: z.array(z.string().min(1)),
   })
   .partial();
 
