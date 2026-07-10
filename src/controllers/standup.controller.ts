@@ -44,6 +44,12 @@ export async function standup(req: Request, res: Response) {
       include: {
         author: { select: userMiniSelect },
         project: { select: { name: true, code: true, color: true } },
+        relatedTasks: {
+          include: {
+            task: { select: { id: true, title: true, status: true, priority: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
       },
       orderBy: { createdAt: "asc" },
     }),
@@ -61,22 +67,18 @@ export async function standup(req: Request, res: Response) {
     .filter((u) => !u.requiresDailyReport)
     .map(({ requiresDailyReport, ...u }) => u);
 
-  // Related active tasks (assignee-aware) for each person who submitted.
-  const authorIds = [...submittedIds];
-  const assigned = authorIds.length
-    ? await prisma.taskAssignee.findMany({
-        where: { userId: { in: authorIds }, task: { status: { not: "DONE" } } },
-        select: {
-          userId: true,
-          task: { select: { id: true, title: true, status: true, priority: true } },
-        },
-      })
-    : [];
-  const tasksByUser = new Map<string, (typeof assigned)[number]["task"][]>();
-  for (const a of assigned) {
-    const arr = tasksByUser.get(a.userId) ?? [];
-    if (arr.length < 5) arr.push(a.task);
-    tasksByUser.set(a.userId, arr);
+  // Related tasks now come from the explicit report↔task links a member chose
+  // (deduped per user, capped for a compact standup view). Reports without any
+  // linked tasks simply contribute none — keeping standup report-focused.
+  type MiniTask = (typeof reports)[number]["relatedTasks"][number]["task"];
+  const tasksByUser = new Map<string, MiniTask[]>();
+  for (const r of reports) {
+    const arr = tasksByUser.get(r.authorId) ?? [];
+    for (const rt of r.relatedTasks) {
+      if (arr.length >= 5) break;
+      if (!arr.some((t) => t.id === rt.task.id)) arr.push(rt.task);
+    }
+    tasksByUser.set(r.authorId, arr);
   }
 
   // Merge duplicate reports per required user into ONE entry so each person

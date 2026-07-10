@@ -136,6 +136,8 @@ model DailyReport {
   authorId  String
   project   Project @relation(fields: [projectId], references: [id])
   projectId String
+  /// optional board tasks this report references (additive, never required)
+  relatedTasks DailyReportRelatedTask[]
 
   @@index([authorId])
   @@index([projectId])
@@ -163,10 +165,31 @@ model Task {
   links       TaskLink[]
   attachments TaskAttachment[]
   comments    TaskComment[]
+  /// daily reports that optionally reference this task (additive)
+  reportRelations DailyReportRelatedTask[]
 
   @@index([projectId])
   @@index([assigneeId])
   @@index([status])
+}
+
+/// Optional link between a daily report and a board task it references.
+/// Reports stay free-form — this relation is additive and never required.
+/// A report can reference many tasks; a task can appear in many reports.
+model DailyReportRelatedTask {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  /// user who added the link (optional, informational only)
+  createdById String?
+
+  report   DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportId String
+  task     Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId   String
+
+  @@unique([reportId, taskId])
+  @@index([reportId])
+  @@index([taskId])
 }
 
 /// Many-to-many task ⇄ user assignment. A task can have multiple assignees.
