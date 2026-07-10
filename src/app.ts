@@ -37,6 +37,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/daily-reports", reportRoutes); // alias
 app.use("/api/tasks", taskRoutes);
 app.use("/api/leaves", leaveRoutes);
 app.use("/api/dashboard", dashboardRoutes);
