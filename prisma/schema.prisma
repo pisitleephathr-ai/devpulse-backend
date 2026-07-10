@@ -108,12 +108,14 @@ model DailyReport {
 }
 
 model Task {
-  id        String       @id @default(cuid())
-  title     String
-  priority  TaskPriority @default(MEDIUM)
-  status    TaskStatus   @default(TODO)
-  dueDate   DateTime?
-  createdAt DateTime     @default(now())
+  id          String       @id @default(cuid())
+  title       String
+  /// optional details; importer stores "Progress: NN%" + "Note: ..." here
+  description String       @default("")
+  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus   @default(TODO)
+  dueDate     DateTime?
+  createdAt   DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
   project    Project @relation(fields: [projectId], references: [id])
