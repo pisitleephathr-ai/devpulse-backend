@@ -79,16 +79,59 @@ export async function standup(req: Request, res: Response) {
     tasksByUser.set(a.userId, arr);
   }
 
-  const submittedReports = reports.map((r) => ({
-    id: r.id,
-    user: r.author,
-    did: r.did,
-    plan: r.plan,
-    blockers: cleanBlocker(r.blockers),
-    project: r.project,
-    status: r.status,
-    tasks: tasksByUser.get(r.authorId) ?? [],
-  }));
+  // Merge duplicate reports per required user into ONE entry so each person
+  // appears once in the standup queue. Exempt users are excluded entirely.
+  // Reports are ordered createdAt asc, so later text is appended / wins.
+  const requiredIds = new Set(required.map((u) => u.id));
+  const mergeText = (a: string, b: string) => {
+    const x = (a || "").trim();
+    const y = (b || "").trim();
+    if (!y) return x;
+    if (!x) return y;
+    return x.includes(y) ? x : `${x}\n${y}`;
+  };
+
+  type MergedReport = {
+    id: string;
+    user: (typeof reports)[number]["author"];
+    did: string;
+    plan: string;
+    blockers: string;
+    project: (typeof reports)[number]["project"];
+    status: string;
+    reportCount: number;
+    tasks: NonNullable<ReturnType<typeof tasksByUser.get>>;
+  };
+  const byAuthor = new Map<string, MergedReport>();
+  for (const r of reports) {
+    if (!requiredIds.has(r.authorId)) continue; // exclude exempt users
+    const blk = cleanBlocker(r.blockers);
+    const cur = byAuthor.get(r.authorId);
+    if (!cur) {
+      byAuthor.set(r.authorId, {
+        id: r.id,
+        user: r.author,
+        did: r.did,
+        plan: r.plan,
+        blockers: blk,
+        project: r.project,
+        status: r.status,
+        reportCount: 1,
+        tasks: tasksByUser.get(r.authorId) ?? [],
+      });
+    } else {
+      cur.did = mergeText(cur.did, r.did);
+      cur.plan = mergeText(cur.plan, r.plan);
+      cur.blockers = mergeText(cur.blockers, blk);
+      cur.project = r.project ?? cur.project;
+      cur.status = r.status;
+      cur.id = r.id;
+      cur.reportCount += 1;
+    }
+  }
+  const submittedReports = [...byAuthor.values()].sort((a, b) =>
+    a.user.name.localeCompare(b.user.name, "th")
+  );
 
   const blockers = submittedReports
     .filter((r) => r.blockers.length > 0)
@@ -97,7 +140,8 @@ export async function standup(req: Request, res: Response) {
   res.json({
     date: dateStr,
     stats: {
-      submitted: reports.length,
+      // unique required users who submitted (not raw report count)
+      submitted: submittedReports.length,
       missing: missingUsers.length,
       exempt: exemptUsers.length,
       totalRequired: required.length,
