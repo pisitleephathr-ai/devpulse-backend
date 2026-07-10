@@ -21,10 +21,16 @@
  * wins (its status/progress/note). No duplicate task titles per user/date.
  *
  * Flags:
- *   --replace   delete existing TRR OutDev reports+tasks (this source only)
- *               before re-importing. Never touches other projects' data or users.
+ *   --replace        delete existing TRR OutDev reports+tasks (this source only)
+ *                    before re-importing. Never touches other projects/users.
+ *   --replace-demo   remove ONLY the original mock/demo seed (the 9 fake users,
+ *                    4 fake projects and their reports/tasks/leaves, the demo
+ *                    calendar events and activity logs) before importing. Keeps
+ *                    schema, enums, leave-type policies, team settings, auth, and
+ *                    all real (TRR OutDev) data. Boss is promoted to MANAGER so a
+ *                    real admin/manager account remains.
  *
- * Run:  DATABASE_URL=... npm run import:daily-meet [-- --replace]
+ * Run:  DATABASE_URL=... npm run import:daily-meet [-- --replace | --replace-demo]
  */
 import "dotenv/config";
 import { PrismaClient, type TaskStatus } from "@prisma/client";
@@ -38,6 +44,36 @@ const TABS = ["Boss", "Pond", "Jame", "Gun", "Golf", "Pang"];
 const PROJECT = { name: "TRR OutDev", code: "TRR-OUTDEV", color: "#0d9488" };
 const DEFAULT_PASSWORD = "password123";
 const REPLACE = process.argv.includes("--replace");
+const REPLACE_DEMO = process.argv.includes("--replace-demo");
+
+// Boss is the team lead → keep an admin/manager account among the real users.
+const ROLE_BY_TAB: Record<string, "MANAGER" | "DEVELOPER"> = { Boss: "MANAGER" };
+
+// The exact records the original seed (prisma/seed.ts) created — used only by
+// --replace-demo. Matched by stable natural keys so nothing else is touched.
+const DEMO_USER_EMAILS = [
+  "lena@devpulse.io",
+  "dana@devpulse.io",
+  "maya@devpulse.io",
+  "jonas@devpulse.io",
+  "priya@devpulse.io",
+  "tom@devpulse.io",
+  "sara@devpulse.io",
+  "alex@devpulse.io",
+  "ben@devpulse.io",
+];
+const DEMO_PROJECT_CODES = ["ATLAS", "ORBIT", "CONSOLE", "INFRA"];
+const DEMO_CALENDAR_TITLES = [
+  "ซาร่า · ลาป่วย",
+  "OAuth ครบกำหนด",
+  "Push ครบกำหนด",
+  "Rate limit ครบกำหนด",
+  "กราฟ v2 ครบกำหนด",
+  "แผน QA ครบกำหนด",
+  "ทอม · ลาพักร้อน",
+  "Terraform ครบกำหนด",
+  "รีลีส 2.4",
+];
 
 // Notes/tasks containing any of these are surfaced as report blockers.
 const BLOCKER_KEYWORDS = [
@@ -150,18 +186,72 @@ function parseTab(rows: string[][]): Block[] {
 
 async function upsertUser(tab: string, passwordHash: string) {
   const email = `${tab.toLowerCase()}@devpulse.io`;
+  const role = ROLE_BY_TAB[tab] ?? "DEVELOPER";
   return prisma.user.upsert({
     where: { email },
-    update: { name: tab, avatarKey: tab, active: true },
+    update: { name: tab, avatarKey: tab, active: true, role },
     create: {
       name: tab,
       email,
       password: passwordHash,
-      role: "DEVELOPER",
+      role,
       avatarKey: tab,
       active: true,
     },
   });
+}
+
+/**
+ * Remove ONLY the original demo/mock seed. Deletes children before parents and
+ * matches by known natural keys, so real (TRR OutDev) data, leave-type policies,
+ * team settings and the schema are untouched. Idempotent (empty `in` → no-op).
+ */
+async function replaceDemo() {
+  const demoUsers = await prisma.user.findMany({
+    where: { email: { in: DEMO_USER_EMAILS } },
+    select: { id: true },
+  });
+  const demoUserIds = demoUsers.map((u) => u.id);
+  const demoProjects = await prisma.project.findMany({
+    where: { code: { in: DEMO_PROJECT_CODES } },
+    select: { id: true },
+  });
+  const demoProjectIds = demoProjects.map((p) => p.id);
+
+  const tasks = await prisma.task.deleteMany({
+    where: {
+      OR: [{ projectId: { in: demoProjectIds } }, { assigneeId: { in: demoUserIds } }],
+    },
+  });
+  const reports = await prisma.dailyReport.deleteMany({
+    where: {
+      OR: [{ projectId: { in: demoProjectIds } }, { authorId: { in: demoUserIds } }],
+    },
+  });
+  const leaves = await prisma.leaveRequest.deleteMany({
+    where: {
+      OR: [{ userId: { in: demoUserIds } }, { reviewedById: { in: demoUserIds } }],
+    },
+  });
+  const activity = await prisma.activityLog.deleteMany({
+    where: { userId: { in: demoUserIds } },
+  });
+  const calendar = await prisma.calendarEvent.deleteMany({
+    where: { title: { in: DEMO_CALENDAR_TITLES } },
+  });
+  const projects = await prisma.project.deleteMany({
+    where: { id: { in: demoProjectIds } },
+  });
+  const users = await prisma.user.deleteMany({
+    where: { id: { in: demoUserIds } },
+  });
+
+  console.log(
+    `🧹 --replace-demo removed: ${users.count} users, ${projects.count} projects, ` +
+      `${reports.count} reports, ${tasks.count} tasks, ${leaves.count} leaves, ` +
+      `${activity.count} activity logs, ${calendar.count} calendar events`
+  );
+  console.log("   kept: schema, enums, leave-type policies, team settings, auth, real TRR data");
 }
 
 async function upsertReport(
@@ -202,7 +292,12 @@ async function upsertTask(
 /* -------------------------------- main --------------------------------- */
 
 async function main() {
-  console.log(`📥 Importing TRR OutDev daily meet${REPLACE ? " (--replace mode)" : ""}…`);
+  console.log(
+    `📥 Importing TRR OutDev daily meet` +
+      `${REPLACE_DEMO ? " (--replace-demo)" : ""}${REPLACE ? " (--replace)" : ""}…`
+  );
+
+  if (REPLACE_DEMO) await replaceDemo();
 
   const project = await prisma.project.upsert({
     where: { code: PROJECT.code },
