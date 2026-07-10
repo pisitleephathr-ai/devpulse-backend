@@ -8,6 +8,7 @@ export const userPublicSelect = {
   email: true,
   avatarKey: true,
   active: true,
+  requiresDailyReport: true,
   createdAt: true,
   updatedAt: true,
   roleRef: { select: roleSelect },

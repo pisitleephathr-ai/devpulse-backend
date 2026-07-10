@@ -39,7 +39,8 @@ export async function summary(_req: Request, res: Response) {
     recentActivity,
     upcomingLeaves,
   ] = await Promise.all([
-    prisma.user.count({ where: { active: true } }),
+    // Only users required to submit a daily report count toward the total.
+    prisma.user.count({ where: { active: true, requiresDailyReport: true } }),
     prisma.dailyReport.count({
       where: { date: dayRange, status: "SUBMITTED" },
     }),
@@ -137,7 +138,7 @@ export async function insights(_req: Request, res: Response) {
     }),
     prisma.user.findMany({
       where: { active: true },
-      select: { id: true, name: true, avatarKey: true },
+      select: { id: true, name: true, avatarKey: true, requiresDailyReport: true },
       orderBy: { name: "asc" },
     }),
     prisma.dailyReport.findMany({
@@ -176,10 +177,13 @@ export async function insights(_req: Request, res: Response) {
   const done = countBy("DONE");
   const total = todo + inProgress + review + done;
 
-  // Report submission status for the reference day.
+  // Report submission status for the reference day. Only users required to
+  // submit a daily report are counted — exempt users never appear as missing
+  // and are excluded from the denominator.
+  const requiredReporters = activeUsers.filter((u) => u.requiresDailyReport);
   const submittedIds = new Set(reportsForDay.map((r) => r.authorId));
-  const submitted = activeUsers.filter((u) => submittedIds.has(u.id));
-  const missing = activeUsers.filter((u) => !submittedIds.has(u.id));
+  const submitted = requiredReporters.filter((u) => submittedIds.has(u.id));
+  const missing = requiredReporters.filter((u) => !submittedIds.has(u.id));
 
   // Top blockers from recent reports (skip "no blocker" placeholders).
   const topBlockers = recentBlockerReports
@@ -230,7 +234,7 @@ export async function insights(_req: Request, res: Response) {
     reports: {
       date: refDate,
       submittedCount: submitted.length,
-      totalMembers: activeUsers.length,
+      totalMembers: requiredReporters.length,
       submitted,
       missing,
     },

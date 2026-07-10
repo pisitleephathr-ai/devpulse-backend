@@ -52,6 +52,7 @@ export async function createUser(req: Request, res: Response) {
       roleId,
       avatarKey: data.avatarKey ?? keyFromEmail(data.email),
       active: data.active ?? true,
+      requiresDailyReport: data.requiresDailyReport ?? true,
     },
     select: userPublicSelect,
   });
@@ -78,6 +79,7 @@ export async function updateUser(req: Request, res: Response) {
       name: data.name,
       avatarKey: data.avatarKey,
       active: data.active,
+      requiresDailyReport: data.requiresDailyReport,
       ...(roleId ? { roleId } : {}),
     },
     select: userPublicSelect,

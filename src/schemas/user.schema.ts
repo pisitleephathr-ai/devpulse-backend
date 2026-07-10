@@ -9,6 +9,7 @@ export const createUserSchema = z
     roleCode: z.string().min(1).optional(),
     avatarKey: z.string().min(1).optional(),
     active: z.boolean().optional(),
+    requiresDailyReport: z.boolean().optional(),
   })
   .refine((d) => d.roleId || d.roleCode, {
     message: "ต้องระบุ roleId หรือ roleCode",
@@ -21,6 +22,7 @@ export const updateUserSchema = z.object({
   roleCode: z.string().min(1).optional(),
   avatarKey: z.string().min(1).optional(),
   active: z.boolean().optional(),
+  requiresDailyReport: z.boolean().optional(),
 });
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
