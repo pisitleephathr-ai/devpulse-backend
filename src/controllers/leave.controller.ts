@@ -59,6 +59,11 @@ export async function getLeave(req: Request, res: Response) {
     include,
   });
   if (!leave) throw new AppError(404, "ไม่พบคำขอลา");
+  // Non-managers may only view their own leave request.
+  const isManager = req.user!.role === "MANAGER" || req.user!.role === "ADMIN";
+  if (!isManager && leave.userId !== req.user!.id) {
+    throw new AppError(403, "ไม่มีสิทธิ์ดูคำขอลานี้");
+  }
   res.json({ leave });
 }
 
@@ -114,6 +119,10 @@ async function decide(req: Request, res: Response, status: LeaveStatus) {
   if (!existing) throw new AppError(404, "ไม่พบคำขอลา");
   if (existing.status !== "PENDING") {
     throw new AppError(409, "คำขอนี้ถูกดำเนินการไปแล้ว");
+  }
+  // A user may not approve/reject their own leave (admins may override).
+  if (existing.userId === req.user!.id && req.user!.role !== "ADMIN") {
+    throw new AppError(403, "ไม่สามารถอนุมัติ/ปฏิเสธคำขอลาของตนเองได้");
   }
 
   const leave = await prisma.leaveRequest.update({
