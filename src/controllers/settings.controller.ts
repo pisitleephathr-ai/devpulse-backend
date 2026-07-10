@@ -120,3 +120,40 @@ export async function deleteHoliday(req: Request, res: Response) {
   await prisma.companyHoliday.delete({ where: { id: req.params.id } });
   res.status(204).send();
 }
+
+/* ------------------------------ Menu config ---------------------------- */
+
+function parseMenu(raw: string | undefined): unknown[] {
+  if (!raw) return [];
+  try {
+    const p = JSON.parse(raw);
+    return Array.isArray(p) ? p : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Sidebar menu customization (display only). Readable by any authed user so
+ * the sidebar can render it; it never grants page access (RBAC is separate). */
+export async function getMenu(_req: Request, res: Response) {
+  const setting = await prisma.teamSetting.findFirst();
+  res.json({ menu: parseMenu(setting?.menuConfig) });
+}
+
+export async function updateMenu(req: Request, res: Response) {
+  const { menu } = req.body as { menu: unknown[] };
+  const existing = await prisma.teamSetting.findFirst();
+  const json = JSON.stringify(menu);
+  const setting = existing
+    ? await prisma.teamSetting.update({ where: { id: existing.id }, data: { menuConfig: json } })
+    : await prisma.teamSetting.create({ data: { ...DEFAULT_SETTING, menuConfig: json } });
+  res.json({ menu: parseMenu(setting.menuConfig) });
+}
+
+export async function resetMenu(_req: Request, res: Response) {
+  const existing = await prisma.teamSetting.findFirst();
+  if (existing) {
+    await prisma.teamSetting.update({ where: { id: existing.id }, data: { menuConfig: "" } });
+  }
+  res.json({ menu: [] });
+}

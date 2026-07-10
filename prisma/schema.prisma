@@ -359,5 +359,8 @@ model TeamSetting {
   notifyTaskDue             Boolean @default(true)
   /// comma-separated menu ids defining sidebar order (empty = default order)
   menuOrder                 String  @default("")
+  /// JSON array of sidebar menu customization: [{key, customLabel, order, isVisible}].
+  /// Empty = code defaults. Controls display only — never grants page access.
+  menuConfig                String  @default("")
   updatedAt          DateTime @updatedAt
 }

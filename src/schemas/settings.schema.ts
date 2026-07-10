@@ -39,6 +39,19 @@ export const createHolidaySchema = z.object({
 
 export const updateHolidaySchema = createHolidaySchema.partial();
 
+export const updateMenuSchema = z.object({
+  menu: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(40),
+        customLabel: z.string().max(60).nullable().optional(),
+        order: z.number().int().min(0),
+        isVisible: z.boolean(),
+      })
+    )
+    .max(50),
+});
+
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
 export type CreateLeaveTypeInput = z.infer<typeof createLeaveTypeSchema>;
 export type UpdateLeaveTypeInput = z.infer<typeof updateLeaveTypeSchema>;

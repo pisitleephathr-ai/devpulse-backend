@@ -1,7 +1,7 @@
 import { Router } from "express";
 import * as ctrl from "../controllers/settings.controller";
 import { authenticate } from "../middleware/auth";
-import { isManagerOrAdmin } from "../middleware/authorize";
+import { isAdmin, isManagerOrAdmin } from "../middleware/authorize";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/error";
 import {
@@ -9,6 +9,7 @@ import {
   createLeaveTypeSchema,
   updateHolidaySchema,
   updateLeaveTypeSchema,
+  updateMenuSchema,
   updateSettingsSchema,
 } from "../schemas/settings.schema";
 import { idParam } from "../schemas/common.schema";
@@ -68,5 +69,10 @@ router.delete(
   validate({ params: idParam }),
   asyncHandler(ctrl.deleteHoliday)
 );
+
+// Sidebar menu customization — read by any authed user (sidebar); admin-only writes
+router.get("/menu", asyncHandler(ctrl.getMenu));
+router.patch("/menu", isAdmin, validate({ body: updateMenuSchema }), asyncHandler(ctrl.updateMenu));
+router.post("/menu/reset", isAdmin, asyncHandler(ctrl.resetMenu));
 
 export default router;
