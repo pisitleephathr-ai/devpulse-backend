@@ -19,14 +19,19 @@ function cleanBlocker(s: string) {
   return NO_BLOCKER.has(s.trim()) ? "" : s.trim();
 }
 
+/** Today's date (YYYY-MM-DD) in Asia/Bangkok — matches /standup and /reports. */
+function bangkokToday(): string {
+  return new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+}
+/** UTC range covering a Bangkok calendar day (reports stored at UTC midnight). */
+function bangkokDayRange(dateStr: string) {
+  const start = new Date(`${dateStr}T00:00:00.000Z`);
+  return { gte: start, lt: new Date(start.getTime() + 24 * 3_600_000) };
+}
+
 export async function summary(_req: Request, res: Response) {
-  // Reference "today" = the most recent report date present in the data.
-  const latest = await prisma.dailyReport.findFirst({
-    orderBy: { date: "desc" },
-    select: { date: true },
-  });
-  const refDate = latest?.date ?? new Date();
-  const dayRange = { gte: startOfDay(refDate), lte: endOfDay(refDate) };
+  // "Today" = the current Asia/Bangkok day, consistent with /standup and /reports.
+  const dayRange = bangkokDayRange(bangkokToday());
 
   const [
     activeMembers,
@@ -99,8 +104,8 @@ export async function summary(_req: Request, res: Response) {
 /**
  * Rich manager-facing insights: task health, report submission status,
  * top blockers, per-person workload, and recently completed tasks.
- * Task due-date math uses the real clock; report "today" uses the most
- * recent report date present in the data (imported reports may be historical).
+ * Report "today" uses the current Asia/Bangkok day, consistent with /standup
+ * and /reports so the report-status numbers always match those pages.
  */
 export async function insights(_req: Request, res: Response) {
   const now = new Date();
@@ -108,12 +113,8 @@ export async function insights(_req: Request, res: Response) {
   const todayEnd = endOfDay(now);
   const weekEnd = endOfDay(new Date(now.getTime() + 6 * 86_400_000));
 
-  const latest = await prisma.dailyReport.findFirst({
-    orderBy: { date: "desc" },
-    select: { date: true },
-  });
-  const refDate = latest?.date ?? now;
-  const reportDay = { gte: startOfDay(refDate), lte: endOfDay(refDate) };
+  const today = bangkokToday();
+  const reportDay = bangkokDayRange(today);
 
   const [
     statusGroups,
@@ -230,7 +231,7 @@ export async function insights(_req: Request, res: Response) {
       completionRate: total ? Math.round((done / total) * 100) : 0,
     },
     reports: {
-      date: refDate,
+      date: today,
       submittedCount: submitted.length,
       totalMembers: requiredReporters.length,
       submitted,
