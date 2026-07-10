@@ -14,6 +14,7 @@ import leaveRoutes from "./routes/leave.routes";
 import dashboardRoutes from "./routes/dashboard.routes";
 import activityRoutes from "./routes/activity.routes";
 import notificationRoutes from "./routes/notification.routes";
+import searchRoutes from "./routes/search.routes";
 import calendarRoutes from "./routes/calendar.routes";
 import settingsRoutes from "./routes/settings.routes";
 import { errorHandler, notFound } from "./middleware/error";
@@ -49,6 +50,7 @@ app.use("/api/leaves", leaveRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/activity", activityRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/search", searchRoutes);
 app.use("/api/calendar", calendarRoutes);
 app.use("/api/settings", settingsRoutes);
 
