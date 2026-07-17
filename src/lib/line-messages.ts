@@ -55,22 +55,24 @@ function row(label: string, value: string, valueColor = INK): LineMessage {
 }
 
 /**
- * Shared bubble shell so both card types look identical: a teal header with an
- * icon+label, a body, and an optional "open task" footer button. Keeping one
- * shell is what makes the New-task and Status cards a matched set.
+ * Shared bubble shell so every card looks like a matched set: a colored header
+ * with a label, a body, and an optional footer button. The header/button color
+ * defaults to the teal brand but can be themed per card (e.g. green for an
+ * approval, red for a rejection).
  */
 function shell(
   headerLabel: string,
   bodyContents: LineMessage[],
-  url?: string
+  opts: { url?: string; headerColor?: string; buttonLabel?: string } = {}
 ): LineMessage {
+  const accent = opts.headerColor ?? TEAL;
   const bubble: LineMessage = {
     type: "bubble",
     size: "kilo",
     header: {
       type: "box",
       layout: "vertical",
-      backgroundColor: TEAL,
+      backgroundColor: accent,
       paddingAll: "16px",
       contents: [
         { type: "text", text: headerLabel, color: "#ffffff", size: "sm", weight: "bold" },
@@ -84,7 +86,7 @@ function shell(
       contents: bodyContents,
     },
   };
-  if (url) {
+  if (opts.url) {
     bubble.footer = {
       type: "box",
       layout: "vertical",
@@ -94,9 +96,9 @@ function shell(
         {
           type: "button",
           style: "primary",
-          color: TEAL,
+          color: accent,
           height: "sm",
-          action: { type: "uri", label: "เปิดดูงาน ↗", uri: url },
+          action: { type: "uri", label: opts.buttonLabel ?? "เปิดดูงาน ↗", uri: opts.url },
         },
       ],
     };
@@ -144,7 +146,7 @@ export function taskCreatedFlex(
       { type: "separator", margin: "md", color: HAIRLINE },
       actorLine(`สร้างโดย ${t.actorName}`),
     ],
-    url
+    { url }
   );
   return { altText: `📋 งานใหม่: ${t.title}`, contents };
 }
@@ -199,7 +201,163 @@ export function taskStatusFlex(
       { type: "separator", margin: "md", color: HAIRLINE },
       actorLine(`โดย ${t.actorName}`),
     ],
-    url
+    { url }
   );
   return { altText: `🔄 ${t.title} → ${to.label}`, contents };
+}
+
+/* --------------------------------------------------------------------------
+ * Leave + daily-summary cards
+ * ------------------------------------------------------------------------ */
+
+const LEAVE_TYPE_LABEL: Record<string, string> = {
+  VACATION: "ลาพักร้อน",
+  SICK: "ลาป่วย",
+  PERSONAL: "ลากิจ",
+  PARENTAL: "ลาเลี้ยงดูบุตร",
+};
+
+const HALF_LABEL: Record<string, string> = {
+  MORNING: "ครึ่งวันเช้า",
+  AFTERNOON: "ครึ่งวันบ่าย",
+};
+
+/** Human label for a leave type ("ลาป่วย"), falling back to the raw code. */
+export function leaveTypeLabel(type: string): string {
+  return LEAVE_TYPE_LABEL[type] ?? type;
+}
+
+/** e.g. "1 วัน" or "0.5 วัน (ครึ่งวันเช้า)" — shared leave duration label. */
+export function leaveDaysLabel(days: number, half?: string | null): string {
+  return half ? `${days} วัน (${HALF_LABEL[half] ?? "ครึ่งวัน"})` : `${days} วัน`;
+}
+
+/** A date span like "15 ก.ค. 2569" or "15 – 18 ก.ค. 2569". */
+function dateRange(start: Date, end: Date): string {
+  const a = thaiDate(start);
+  const b = thaiDate(end);
+  return a === b ? a : `${a} – ${b}`;
+}
+
+type LeaveCardInput = {
+  userName: string;
+  type: string;
+  startDate: Date;
+  endDate: Date;
+  days: number;
+  halfDayPeriod?: string | null;
+  reason?: string | null;
+  /** who approved/rejected (only shown on a decision card) */
+  actorName?: string | null;
+};
+
+const LEAVE_DECISION = {
+  PENDING: { header: "📝 คำขอลาใหม่", color: "#d97706", statusLabel: "รออนุมัติ", statusColor: "#d97706" },
+  APPROVED: { header: "✅ อนุมัติการลา", color: "#16a34a", statusLabel: "อนุมัติแล้ว", statusColor: "#16a34a" },
+  REJECTED: { header: "🚫 ไม่อนุมัติการลา", color: "#dc2626", statusLabel: "ไม่อนุมัติ", statusColor: "#dc2626" },
+} as const;
+
+/** Flex card for a leave request submitted / approved / rejected. */
+export function leaveFlex(
+  status: "PENDING" | "APPROVED" | "REJECTED",
+  t: LeaveCardInput,
+  url?: string
+): { altText: string; contents: LineMessage } {
+  const meta = LEAVE_DECISION[status];
+  const body: LineMessage[] = [
+    titleLine(t.userName),
+    row("ประเภท", leaveTypeLabel(t.type)),
+    row("ช่วงวันที่", dateRange(t.startDate, t.endDate)),
+    row("จำนวน", leaveDaysLabel(t.days, t.halfDayPeriod)),
+    row("สถานะ", meta.statusLabel, meta.statusColor),
+  ];
+  if (t.reason && t.reason.trim()) body.push(row("เหตุผล", t.reason.trim()));
+  body.push({ type: "separator", margin: "md", color: HAIRLINE });
+  body.push(
+    actorLine(
+      t.actorName ? `${status === "APPROVED" ? "อนุมัติโดย" : status === "REJECTED" ? "ปฏิเสธโดย" : "โดย"} ${t.actorName}` : "รอผู้จัดการพิจารณา"
+    )
+  );
+
+  const contents = shell(meta.header, body, {
+    url,
+    headerColor: meta.color,
+    buttonLabel: "เปิดดูคำขอ ↗",
+  });
+  return { altText: `${meta.header}: ${t.userName} (${leaveTypeLabel(t.type)})`, contents };
+}
+
+/** One "person on leave" line: bold name + muted "type · duration". */
+function leaveEntryLine(name: string, detail: string): LineMessage {
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "none",
+    contents: [
+      { type: "text", text: name, color: INK, size: "sm", weight: "bold", wrap: true },
+      { type: "text", text: detail, color: MUTED, size: "xs", wrap: true },
+    ],
+  };
+}
+
+export type LeaveTodayEntry = { name: string; type: string; days: number; half?: string | null };
+
+/** Flex card summarizing everyone on approved leave today. */
+export function leaveTodayFlex(
+  today: Date,
+  entries: LeaveTodayEntry[],
+  url?: string
+): { altText: string; contents: LineMessage } {
+  const body: LineMessage[] = [
+    titleLine(`วันนี้มีคนลา ${entries.length} คน`),
+    { type: "text", text: thaiDate(today), color: MUTED, size: "xs" },
+    { type: "separator", margin: "md", color: HAIRLINE },
+    ...entries.map((e) =>
+      leaveEntryLine(e.name, `${leaveTypeLabel(e.type)} · ${leaveDaysLabel(e.days, e.half)}`)
+    ),
+  ];
+  const contents = shell("🌴 วันนี้มีใครลา", body, {
+    url,
+    headerColor: "#0891b2",
+    buttonLabel: "เปิดปฏิทินทีม ↗",
+  });
+  return { altText: `🌴 วันนี้มีคนลา ${entries.length} คน`, contents };
+}
+
+/** Flex card summarizing daily-report submission (submitted vs missing). */
+export function reportSummaryFlex(
+  today: Date,
+  data: { submitted: number; total: number; missingNames: string[] },
+  url?: string
+): { altText: string; contents: LineMessage } {
+  const done = data.missingNames.length === 0;
+  const body: LineMessage[] = [
+    titleLine(`ส่งแล้ว ${data.submitted}/${data.total} คน`),
+    { type: "text", text: thaiDate(today), color: MUTED, size: "xs" },
+    { type: "separator", margin: "md", color: HAIRLINE },
+  ];
+  if (done) {
+    body.push({
+      type: "text",
+      text: "🎉 ส่งรายงานครบทุกคนแล้ว",
+      color: "#16a34a",
+      size: "sm",
+      weight: "bold",
+      wrap: true,
+    });
+  } else {
+    body.push(
+      { type: "text", text: `ยังไม่ส่ง (${data.missingNames.length})`, color: "#dc2626", size: "sm", weight: "bold" },
+      { type: "text", text: data.missingNames.join(", "), color: INK, size: "sm", wrap: true }
+    );
+  }
+  const contents = shell("📊 สรุปรายงานประจำวัน", body, {
+    url,
+    headerColor: TEAL,
+    buttonLabel: "เปิดดูรายงาน ↗",
+  });
+  return {
+    altText: `📊 รายงานประจำวัน: ส่งแล้ว ${data.submitted}/${data.total}`,
+    contents,
+  };
 }

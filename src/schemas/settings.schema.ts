@@ -18,6 +18,15 @@ export const updateSettingsSchema = z
     lineNotifyStatuses: z.array(
       z.enum(["TODO", "IN_PROGRESS", "REVIEW", "READY_TO_TEST", "DONE"])
     ),
+    lineNotifyLeave: z.boolean(),
+    lineDailyLeaveSummary: z.boolean(),
+    lineDailyLeaveSummaryTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "ต้องเป็นเวลา HH:mm"),
+    lineDailyReportSummary: z.boolean(),
+    lineDailyReportSummaryTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "ต้องเป็นเวลา HH:mm"),
     // comma-separated menu ids
     menuOrder: z.string(),
   })

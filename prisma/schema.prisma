@@ -421,5 +421,18 @@ model TeamSetting {
   lineNotifyNewTask         Boolean  @default(true)
   /// task statuses that trigger a LINE card when moved to them
   lineNotifyStatuses        String[] @default(["TODO", "DONE"])
+  /// push a LINE card when a leave request is submitted / approved / rejected
+  lineNotifyLeave           Boolean  @default(true)
+  /// daily "who's on leave today" summary → LINE group at lineDailyLeaveSummaryTime
+  lineDailyLeaveSummary     Boolean  @default(false)
+  /// HH:mm (Bangkok) the leave summary is sent, on working days only
+  lineDailyLeaveSummaryTime String   @default("09:00")
+  /// daily report summary (submitted / missing) → LINE group at lineDailyReportSummaryTime
+  lineDailyReportSummary    Boolean  @default(false)
+  /// HH:mm (Bangkok) the report summary is sent, on working days only
+  lineDailyReportSummaryTime String  @default("18:00")
+  /// dedup guards — YYYY-MM-DD (Bangkok) each daily summary last fired. Internal.
+  lineLeaveSummaryLastRun   String?
+  lineReportSummaryLastRun  String?
   updatedAt          DateTime @updatedAt
 }
