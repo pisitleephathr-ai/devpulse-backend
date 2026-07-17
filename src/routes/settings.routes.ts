@@ -28,6 +28,9 @@ router.patch(
   asyncHandler(ctrl.updateSettings)
 );
 
+// Send a LINE summary immediately (test button) — manager/admin only.
+router.post("/line/test/:kind", isManagerOrAdmin, asyncHandler(ctrl.testLineSummary));
+
 // Leave-type policies
 router.get("/leave-types", asyncHandler(ctrl.listLeaveTypes));
 router.post(

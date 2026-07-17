@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { env } from "../lib/env";
 import { getLineQuota } from "../lib/line";
+import { triggerSummary } from "../lib/scheduler";
 import type {
   CreateHolidayInput,
   CreateLeaveTypeInput,
@@ -39,6 +40,13 @@ export async function getSettings(_req: Request, res: Response) {
       quota,
     },
   });
+}
+
+/** POST /api/settings/line/test/:kind — fire a LINE summary now (manager/admin). */
+export async function testLineSummary(req: Request, res: Response) {
+  const kind = req.params.kind === "leave" ? "leave" : "report";
+  const result = await triggerSummary(kind);
+  res.json(result);
 }
 
 export async function updateSettings(req: Request, res: Response) {

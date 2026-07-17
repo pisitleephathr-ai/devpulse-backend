@@ -1,6 +1,6 @@
 import { env } from "./env";
 import { prisma } from "./prisma";
-import { appBaseUrl, pushFlexToLineGroup } from "./line";
+import { appBaseUrl, pushFlexToLineGroup, lineDeliveryStatus } from "./line";
 import {
   leaveTodayFlex,
   reportSummaryFlex,
@@ -52,8 +52,10 @@ function hm(value: string | null | undefined, fallback: string): string {
   return `${m[1].padStart(2, "0")}:${m[2]}`;
 }
 
+type SendResult = { pushed: boolean; reason?: string };
+
 /** Build + push the "who's on leave today" card (skips when nobody is out). */
-async function sendLeaveSummary(today: string): Promise<void> {
+async function sendLeaveSummary(today: string): Promise<SendResult> {
   const { gte, lt } = dayRange(today);
   // Approved leaves whose span covers today.
   const leaves = await prisma.leaveRequest.findMany({
@@ -66,7 +68,7 @@ async function sendLeaveSummary(today: string): Promise<void> {
     },
     orderBy: { user: { name: "asc" } },
   });
-  if (!leaves.length) return; // nobody on leave — save the quota
+  if (!leaves.length) return { pushed: false, reason: "วันนี้ไม่มีใครลา" };
   const entries: LeaveTodayEntry[] = leaves.map((l) => ({
     name: l.user.name,
     type: l.type,
@@ -76,10 +78,11 @@ async function sendLeaveSummary(today: string): Promise<void> {
   const base = appBaseUrl();
   const card = leaveTodayFlex(gte, entries, base ? `${base}/calendar` : undefined);
   await pushFlexToLineGroup(card.altText, card.contents);
+  return { pushed: true };
 }
 
 /** Build + push the daily-report submission summary (skips when no one is expected). */
-async function sendReportSummary(today: string): Promise<void> {
+async function sendReportSummary(today: string): Promise<SendResult> {
   const { gte, lt } = dayRange(today);
   const [required, reports, leaves] = await Promise.all([
     prisma.user.findMany({
@@ -100,7 +103,9 @@ async function sendReportSummary(today: string): Promise<void> {
   ]);
   const onLeave = new Set(leaves.map((l) => l.userId));
   const expected = required.filter((u) => !onLeave.has(u.id));
-  if (!expected.length) return; // nobody expected today (all on leave / none required)
+  if (!expected.length) {
+    return { pushed: false, reason: "วันนี้ไม่มีผู้ที่ต้องส่งรายงาน (หรือทุกคนลา)" };
+  }
 
   // One entry per expected author who submitted (first report wins; note blockers).
   const byAuthor = new Map<string, { summary: string; did: string; blocked: boolean }>();
@@ -134,6 +139,25 @@ async function sendReportSummary(today: string): Promise<void> {
     base ? `${base}/standup` : undefined
   );
   await pushFlexToLineGroup(card.altText, card.contents);
+  return { pushed: true };
+}
+
+/**
+ * Manually fire a summary now, bypassing the schedule/last-run/working-day
+ * gates (used by the "send test" button). Still respects LINE config + group
+ * connection so the caller gets a clear reason when delivery isn't possible.
+ */
+export async function triggerSummary(
+  kind: "leave" | "report"
+): Promise<{ sent: boolean; reason?: string }> {
+  const status = await lineDeliveryStatus();
+  if (!status.ready) return { sent: false, reason: status.reason };
+  const today = bangkokToday();
+  const r =
+    kind === "leave"
+      ? await sendLeaveSummary(today)
+      : await sendReportSummary(today);
+  return { sent: r.pushed, reason: r.reason };
 }
 
 /** Whether today (Bangkok) is an active company holiday. */
