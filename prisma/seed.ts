@@ -8,6 +8,16 @@ const prisma = new PrismaClient();
 const d = (iso: string) => new Date(`${iso}T09:00:00.000Z`);
 
 async function main() {
+  // Safety guard: this seed DELETES every table before inserting demo data
+  // with a shared, well-known password. Never let it run against production by
+  // accident (DEPLOYMENT previously documented seeding the live DB directly).
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PROD_SEED !== "1") {
+    throw new Error(
+      "Refusing to seed: NODE_ENV=production. This wipes ALL data and creates demo " +
+        "accounts with a shared password. Set ALLOW_PROD_SEED=1 only if you truly " +
+        "intend to reset production."
+    );
+  }
   console.log("🌱 Seeding DevPulse…");
 
   // Clean in dependency order (safe to re-run).

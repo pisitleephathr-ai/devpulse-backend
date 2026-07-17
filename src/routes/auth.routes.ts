@@ -4,11 +4,11 @@ import { authenticate } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/error";
 import { authLimiter } from "../middleware/rateLimit";
-import { loginSchema, registerSchema } from "../schemas/auth.schema";
+import { loginSchema } from "../schemas/auth.schema";
 
 const router = Router();
 
-router.post("/register", authLimiter, validate({ body: registerSchema }), asyncHandler(ctrl.register));
+// No public /register — accounts are provisioned by admins via POST /api/users.
 router.post("/login", authLimiter, validate({ body: loginSchema }), asyncHandler(ctrl.login));
 router.get("/me", authenticate, asyncHandler(ctrl.me));
 

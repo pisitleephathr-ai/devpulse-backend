@@ -293,6 +293,13 @@ export async function addLink(req: Request, res: Response) {
 
 export async function deleteLink(req: Request, res: Response) {
   await assertCanEdit(req, req.params.taskId);
+  // Ensure the link actually belongs to this task (prevents cross-task IDOR).
+  const link = await prisma.taskLink.findUnique({
+    where: { id: req.params.linkId },
+    select: { taskId: true },
+  });
+  if (!link || link.taskId !== req.params.taskId)
+    throw new AppError(404, "ไม่พบลิงก์");
   await prisma.taskLink.delete({ where: { id: req.params.linkId } });
   res.status(204).send();
 }
@@ -314,6 +321,13 @@ export async function addAttachment(req: Request, res: Response) {
 
 export async function deleteAttachment(req: Request, res: Response) {
   await assertCanEdit(req, req.params.taskId);
+  // Ensure the attachment actually belongs to this task (prevents IDOR).
+  const attachment = await prisma.taskAttachment.findUnique({
+    where: { id: req.params.attachmentId },
+    select: { taskId: true },
+  });
+  if (!attachment || attachment.taskId !== req.params.taskId)
+    throw new AppError(404, "ไม่พบไฟล์แนบ");
   await prisma.taskAttachment.delete({ where: { id: req.params.attachmentId } });
   res.status(204).send();
 }

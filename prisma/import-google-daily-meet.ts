@@ -43,7 +43,15 @@ const prisma = new PrismaClient();
 const SHEET_ID = "1Timhck4r8NpERy89-nAENK8UvLCW7EG23ezzJjLMaOM";
 const TABS = ["Boss", "Pond", "Jame", "Gun", "Golf", "Pang"];
 const PROJECT = { name: "TRR OutDev", code: "TRR-OUTDEV", color: "#0d9488" };
-const DEFAULT_PASSWORD = "password123";
+// Real accounts must not be created with a hardcoded, well-known password.
+// Require an operator-provided value (min 8 chars) via env instead.
+const DEFAULT_PASSWORD = process.env.IMPORT_DEFAULT_PASSWORD;
+if (!DEFAULT_PASSWORD || DEFAULT_PASSWORD.length < 8) {
+  throw new Error(
+    "Set IMPORT_DEFAULT_PASSWORD (min 8 chars) before importing — refusing to " +
+      "create real accounts with a hardcoded default password."
+  );
+}
 const REPLACE = process.argv.includes("--replace");
 const REPLACE_DEMO = process.argv.includes("--replace-demo");
 
