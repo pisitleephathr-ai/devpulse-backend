@@ -248,3 +248,45 @@ export async function insights(_req: Request, res: Response) {
     })),
   });
 }
+
+/**
+ * GET /api/dashboard/report-trend?days=14 — distinct daily-report submitters per
+ * Bangkok day for the last N days, plus the current number of required
+ * reporters, for a submission-rate trend chart.
+ */
+export async function reportTrend(req: Request, res: Response) {
+  const days = Math.min(60, Math.max(1, Number(req.query.days) || 14));
+  // Bangkok "today" (UTC+7) as a YYYY-MM-DD string, then UTC midnight of it.
+  const todayStr = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+  const start = new Date(`${todayStr}T00:00:00.000Z`);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
+
+  const [rows, required] = await Promise.all([
+    prisma.dailyReport.findMany({
+      where: { date: { gte: start } },
+      select: { authorId: true, date: true },
+    }),
+    prisma.user.count({ where: { active: true, requiresDailyReport: true } }),
+  ]);
+
+  const byDay = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const key = r.date.toISOString().slice(0, 10);
+    let set = byDay.get(key);
+    if (!set) {
+      set = new Set();
+      byDay.set(key, set);
+    }
+    set.add(r.authorId);
+  }
+
+  const series: { date: string; submitted: number }[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start);
+    d.setUTCDate(start.getUTCDate() + i);
+    const key = d.toISOString().slice(0, 10);
+    series.push({ date: key, submitted: byDay.get(key)?.size ?? 0 });
+  }
+
+  res.json({ days, required, series });
+}

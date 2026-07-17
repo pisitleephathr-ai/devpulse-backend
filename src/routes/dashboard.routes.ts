@@ -10,6 +10,7 @@ router.use(authenticate);
 
 router.get("/summary", asyncHandler(dashboard.summary));
 router.get("/insights", asyncHandler(dashboard.insights));
+router.get("/report-trend", asyncHandler(dashboard.reportTrend));
 router.get("/activity", asyncHandler(activity.listActivity));
 
 export default router;
