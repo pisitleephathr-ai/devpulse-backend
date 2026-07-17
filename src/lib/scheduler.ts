@@ -5,6 +5,7 @@ import {
   leaveTodayFlex,
   reportSummaryFlex,
   type LeaveTodayEntry,
+  type ReportEntry,
 } from "./line-messages";
 
 /**
@@ -88,7 +89,8 @@ async function sendReportSummary(today: string): Promise<void> {
     }),
     prisma.dailyReport.findMany({
       where: { date: { gte, lt } },
-      select: { authorId: true },
+      select: { authorId: true, summary: true, did: true, blockers: true },
+      orderBy: { createdAt: "asc" },
     }),
     // People on approved leave covering today aren't expected to report.
     prisma.leaveRequest.findMany({
@@ -99,16 +101,36 @@ async function sendReportSummary(today: string): Promise<void> {
   const onLeave = new Set(leaves.map((l) => l.userId));
   const expected = required.filter((u) => !onLeave.has(u.id));
   if (!expected.length) return; // nobody expected today (all on leave / none required)
-  const submitted = new Set(reports.map((r) => r.authorId));
-  const missing = expected.filter((u) => !submitted.has(u.id));
+
+  // One entry per expected author who submitted (first report wins; note blockers).
+  const byAuthor = new Map<string, { summary: string; did: string; blocked: boolean }>();
+  for (const r of reports) {
+    if (byAuthor.has(r.authorId)) continue;
+    byAuthor.set(r.authorId, {
+      summary: r.summary,
+      did: r.did,
+      blocked: r.blockers.trim().length > 0,
+    });
+  }
+  const submitted: ReportEntry[] = [];
+  const missingNames: string[] = [];
+  for (const u of expected) {
+    const rep = byAuthor.get(u.id);
+    if (rep) {
+      submitted.push({
+        name: u.name,
+        detail: rep.summary.trim() || rep.did.trim(),
+        blocked: rep.blocked,
+      });
+    } else {
+      missingNames.push(u.name);
+    }
+  }
+
   const base = appBaseUrl();
   const card = reportSummaryFlex(
     gte,
-    {
-      submitted: expected.length - missing.length,
-      total: expected.length,
-      missingNames: missing.map((u) => u.name),
-    },
+    { total: expected.length, submitted, missingNames },
     base ? `${base}/standup` : undefined
   );
   await pushFlexToLineGroup(card.altText, card.contents);
