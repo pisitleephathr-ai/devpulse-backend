@@ -1,17 +1,11 @@
 import { z } from "zod";
 
-export const registerSchema = z.object({
-  name: z.string().min(1),
-  email: z.string().email(),
-  password: z.string().min(6, "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร"),
-  role: z.enum(["MANAGER", "ADMIN", "DEVELOPER", "QA"]).optional(),
-  avatarKey: z.string().min(1).optional(),
-});
+// registerSchema removed with the public /register route — see auth.routes.ts.
+// User creation is admin-only via user.schema.ts / POST /api/users.
 
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
 
-export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
