@@ -72,12 +72,37 @@ export async function listReports(req: Request, res: Response) {
     projectId: q.projectId,
     status: q.status,
   };
+  const orderBy: Prisma.DailyReportOrderByWithRelationInput[] = [
+    { date: "desc" },
+    { createdAt: "desc" },
+  ];
 
-  const reports = await prisma.dailyReport.findMany({
-    where,
-    include,
-    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-  });
+  // Paginated mode (opt-in via `limit`): return a page + metadata.
+  if (q.limit) {
+    const limit = q.limit;
+    const page = q.page ?? 1;
+    const [rows, total] = await Promise.all([
+      prisma.dailyReport.findMany({
+        where,
+        include,
+        orderBy,
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.dailyReport.count({ where }),
+    ]);
+    res.json({
+      reports: rows.map(serialize),
+      total,
+      page,
+      limit,
+      hasMore: page * limit < total,
+    });
+    return;
+  }
+
+  // Unpaginated (backward-compatible) — return the full list.
+  const reports = await prisma.dailyReport.findMany({ where, include, orderBy });
   res.json({ reports: reports.map(serialize) });
 }
 

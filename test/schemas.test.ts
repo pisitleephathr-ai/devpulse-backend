@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { loginSchema } from "../src/schemas/auth.schema";
-import { createReportSchema, updateReportSchema } from "../src/schemas/report.schema";
+import {
+  createReportSchema,
+  updateReportSchema,
+  reportQuerySchema,
+} from "../src/schemas/report.schema";
 import { createTaskSchema, linkSchema } from "../src/schemas/task.schema";
 import { createLeaveSchema } from "../src/schemas/leave.schema";
 import { createUserSchema } from "../src/schemas/user.schema";
@@ -29,6 +33,18 @@ test("updateReportSchema is fully partial and validates enums", () => {
   assert.equal(ok(updateReportSchema, {}), true);
   assert.equal(ok(updateReportSchema, { status: "SUBMITTED" }), true);
   assert.equal(ok(updateReportSchema, { status: "NOT_A_STATUS" }), false);
+});
+
+test("reportQuerySchema coerces pagination params and caps limit", () => {
+  const r = reportQuerySchema.safeParse({ limit: "20", page: "2" });
+  assert.equal(r.success, true);
+  if (r.success) {
+    assert.equal(r.data.limit, 20);
+    assert.equal(r.data.page, 2);
+  }
+  assert.equal(ok(reportQuerySchema, {}), true); // both optional (unpaginated)
+  assert.equal(ok(reportQuerySchema, { limit: "0" }), false); // must be positive
+  assert.equal(ok(reportQuerySchema, { limit: "500" }), false); // capped at 100
 });
 
 test("createTaskSchema requires a title + projectId; link URLs are validated", () => {
