@@ -218,7 +218,7 @@ export async function updateTask(req: Request, res: Response) {
 
   const before = await prisma.task.findUnique({
     where: { id },
-    select: { assignees: { select: { userId: true } } },
+    select: { status: true, assignees: { select: { userId: true } } },
   });
   const beforeIds = new Set(before?.assignees.map((a) => a.userId) ?? []);
   const nextIds = assigneeIds ? [...new Set(assigneeIds.filter(Boolean))] : null;
@@ -284,6 +284,33 @@ export async function updateTask(req: Request, res: Response) {
       entityType: "task",
       entityId: id,
     });
+  }
+
+  // If this edit changed the status to TODO/DONE, announce it on LINE too — so
+  // changing status via the edit form behaves like dragging the card.
+  if (
+    task &&
+    before &&
+    task.status !== before.status &&
+    LINE_NOTIFY_STATUSES.includes(task.status)
+  ) {
+    const mover = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { name: true },
+    });
+    const base = appBaseUrl();
+    const statusCard = taskStatusFlex(
+      {
+        title: task.title,
+        projectName: task.project.name,
+        projectCode: task.project.code,
+        fromStatus: before.status,
+        toStatus: task.status,
+        actorName: mover?.name ?? "ระบบ",
+      },
+      base ? `${base}/tasks?task=${task.id}` : undefined
+    );
+    await pushFlexToLineGroup(statusCard.altText, statusCard.contents);
   }
 
   res.json({ task: flatten(task!) });

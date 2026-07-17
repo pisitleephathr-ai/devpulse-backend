@@ -64,7 +64,7 @@ function shell(
 ): LineMessage {
   const bubble: LineMessage = {
     type: "bubble",
-    size: "mega",
+    size: "kilo",
     header: {
       type: "box",
       layout: "vertical",
