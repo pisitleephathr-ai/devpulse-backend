@@ -4,7 +4,8 @@ import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
 import { notifyMany } from "../lib/notify";
-import { pushToLineGroup } from "../lib/line";
+import { pushFlexToLineGroup } from "../lib/line";
+import { taskCreatedFlex, taskStatusFlex } from "../lib/line-messages";
 import { isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
 import type {
@@ -162,11 +163,22 @@ export async function createTask(req: Request, res: Response) {
     }
   );
 
-  // Announce the new task to the team's LINE group (once per task).
-  const names = task.assignees.map((a) => a.user.name).join(", ") || "ยังไม่มอบหมาย";
-  await pushToLineGroup(
-    `📋 งานใหม่ [${task.project.code}]\n"${task.title}"\nผู้รับผิดชอบ: ${names}`
-  );
+  // Announce the new task to the team's LINE group as a rich Flex card.
+  const creator = await prisma.user.findUnique({
+    where: { id: req.user!.id },
+    select: { name: true },
+  });
+  const card = taskCreatedFlex({
+    title: task.title,
+    projectName: task.project.name,
+    projectCode: task.project.code,
+    priority: task.priority,
+    status: task.status,
+    dueDate: task.dueDate,
+    assignees: task.assignees.map((a) => a.user.name),
+    actorName: creator?.name ?? "ระบบ",
+  });
+  await pushFlexToLineGroup(card.altText, card.contents);
 
   res.status(201).json({ task: flatten(task) });
 }
@@ -269,6 +281,11 @@ export async function updateTask(req: Request, res: Response) {
 export async function updateTaskStatus(req: Request, res: Response) {
   await assertCanEdit(req, req.params.id);
   const status = (req.body as { status: TaskStatus }).status;
+  // Capture the previous status so the LINE card can show "from → to".
+  const before = await prisma.task.findUnique({
+    where: { id: req.params.id },
+    select: { status: true },
+  });
   const task = await prisma.task.update({
     where: { id: req.params.id },
     data: { status },
@@ -295,10 +312,22 @@ export async function updateTaskStatus(req: Request, res: Response) {
     }
   );
 
-  // Announce the status change to the team's LINE group.
-  await pushToLineGroup(
-    `🔄 [${task.project.code}] "${task.title}"\n→ ${STATUS_LABEL[status]}`
-  );
+  // Announce the status change to the team's LINE group as a Flex card
+  // (skip when the status didn't actually change — e.g. dropped in place).
+  if (before?.status !== status) {
+    const mover = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { name: true },
+    });
+    const statusCard = taskStatusFlex({
+      title: task.title,
+      projectCode: task.project.code,
+      fromStatus: before?.status ?? null,
+      toStatus: status,
+      actorName: mover?.name ?? "ระบบ",
+    });
+    await pushFlexToLineGroup(statusCard.altText, statusCard.contents);
+  }
 
   res.json({ task: flatten(task) });
 }
