@@ -116,7 +116,8 @@ export async function createTask(req: Request, res: Response) {
   const data = req.body as CreateTaskInput;
   const assigneeIds = resolveAssigneeIds(data);
 
-  const task = await prisma.task.create({
+  const task = await prisma.$transaction(async (tx) => {
+    const created = await tx.task.create({
     data: {
       title: data.title.trim(),
       description: data.description?.trim() ?? "",
@@ -144,49 +145,59 @@ export async function createTask(req: Request, res: Response) {
         : undefined,
     },
     include: detailInclude,
+    });
+    // Audit log shares the task's transaction: both commit or neither does,
+    // so a failed log can never leave a task saved with a 500 (→ retry dup).
+    await logActivity(
+      {
+        userId: req.user!.id,
+        action: "task.create",
+        message: `สร้างงานใหม่ "${created.title}"`,
+        entityType: "task",
+        entityId: created.id,
+      },
+      tx
+    );
+    return created;
   });
 
-  await logActivity({
-    userId: req.user!.id,
-    action: "task.create",
-    message: `สร้างงานใหม่ "${task.title}"`,
-    entityType: "task",
-    entityId: task.id,
-  });
+  // Side effects run AFTER commit and must never fail the request (a LINE or
+  // notification error must not 500 a task that was created successfully).
+  try {
+    await notifyMany(
+      assigneeIds.filter((id) => id !== req.user!.id),
+      {
+        type: "task.assigned",
+        title: "ได้รับมอบหมายงานใหม่",
+        message: `คุณได้รับมอบหมายงาน "${task.title}"`,
+        entityType: "task",
+        entityId: task.id,
+      }
+    );
 
-  await notifyMany(
-    assigneeIds.filter((id) => id !== req.user!.id),
-    {
-      type: "task.assigned",
-      title: "ได้รับมอบหมายงานใหม่",
-      message: `คุณได้รับมอบหมายงาน "${task.title}"`,
-      entityType: "task",
-      entityId: task.id,
+    if ((await getLinePrefs()).notifyNewTask) {
+      const creator = await prisma.user.findUnique({
+        where: { id: req.user!.id },
+        select: { name: true },
+      });
+      const base = appBaseUrl();
+      const card = taskCreatedFlex(
+        {
+          title: task.title,
+          projectName: task.project.name,
+          projectCode: task.project.code,
+          priority: task.priority,
+          status: task.status,
+          dueDate: task.dueDate,
+          assignees: task.assignees.map((a) => a.user.name),
+          actorName: creator?.name ?? "ระบบ",
+        },
+        base ? `${base}/tasks?task=${task.id}` : undefined
+      );
+      await pushFlexToLineGroup(card.altText, card.contents);
     }
-  );
-
-  // Announce the new task to the team's LINE group as a rich Flex card
-  // (only when the team has LINE "new task" notifications enabled).
-  if ((await getLinePrefs()).notifyNewTask) {
-  const creator = await prisma.user.findUnique({
-    where: { id: req.user!.id },
-    select: { name: true },
-  });
-  const base = appBaseUrl();
-  const card = taskCreatedFlex(
-    {
-      title: task.title,
-      projectName: task.project.name,
-      projectCode: task.project.code,
-      priority: task.priority,
-      status: task.status,
-      dueDate: task.dueDate,
-      assignees: task.assignees.map((a) => a.user.name),
-      actorName: creator?.name ?? "ระบบ",
-    },
-    base ? `${base}/tasks?task=${task.id}` : undefined
-  );
-  await pushFlexToLineGroup(card.altText, card.contents);
+  } catch (err) {
+    console.warn("[task.create] post-commit side-effect failed:", err);
   }
 
   res.status(201).json({ task: flatten(task) });

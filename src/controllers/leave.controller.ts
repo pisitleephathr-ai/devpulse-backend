@@ -140,7 +140,8 @@ export async function createLeave(req: Request, res: Response) {
   const userId =
     data.userId && isTeamManager(req) ? data.userId : req.user!.id;
 
-  const leave = await prisma.leaveRequest.create({
+  const leave = await prisma.$transaction(async (tx) => {
+    const created = await tx.leaveRequest.create({
     data: {
       userId,
       type: data.type,
@@ -152,27 +153,34 @@ export async function createLeave(req: Request, res: Response) {
       status: "PENDING",
     },
     include,
+    });
+    await logActivity(
+      {
+        userId: req.user!.id,
+        action: "leave.create",
+        message: `${created.user.name} ขอ${TYPE_LABEL[created.type]}`,
+        entityType: "leave",
+        entityId: created.id,
+      },
+      tx
+    );
+    return created;
   });
 
-  await logActivity({
-    userId: req.user!.id,
-    action: "leave.create",
-    message: `${leave.user.name} ขอ${TYPE_LABEL[leave.type]}`,
-    entityType: "leave",
-    entityId: leave.id,
-  });
-
-  // Notify managers/admins (excluding the requester if they are one).
-  const recipients = (await managerIds()).filter((id) => id !== leave.userId);
-  await notifyMany(recipients, {
-    type: "leave.submitted",
-    title: "คำขอลาใหม่",
-    message: `${leave.user.name} ขอ${TYPE_LABEL[leave.type]} ${daysLabel(leave.days, leave.halfDayPeriod)}`,
-    entityType: "leave",
-    entityId: leave.id,
-  });
-
-  await pushLeaveCard("PENDING", leave);
+  // Side effects run AFTER commit and must never fail the request.
+  try {
+    const recipients = (await managerIds()).filter((id) => id !== leave.userId);
+    await notifyMany(recipients, {
+      type: "leave.submitted",
+      title: "คำขอลาใหม่",
+      message: `${leave.user.name} ขอ${TYPE_LABEL[leave.type]} ${daysLabel(leave.days, leave.halfDayPeriod)}`,
+      entityType: "leave",
+      entityId: leave.id,
+    });
+    await pushLeaveCard("PENDING", leave);
+  } catch (err) {
+    console.warn("[leave.create] post-commit side-effect failed:", err);
+  }
 
   res.status(201).json({ leave });
 }
@@ -192,34 +200,43 @@ async function decide(req: Request, res: Response, status: LeaveStatus) {
     throw new AppError(403, "ไม่สามารถอนุมัติ/ปฏิเสธคำขอลาของตนเองได้");
   }
 
-  const leave = await prisma.leaveRequest.update({
-    where: { id: req.params.id },
-    data: { status, reviewedById: req.user!.id },
-    include,
-  });
-
   const verb = status === "APPROVED" ? "อนุมัติ" : "ปฏิเสธ";
-  await logActivity({
-    userId: req.user!.id,
-    action: status === "APPROVED" ? "leave.approve" : "leave.reject",
-    message: `${verb}คำขอ${TYPE_LABEL[leave.type]}ของ ${existing.user.name}`,
-    entityType: "leave",
-    entityId: leave.id,
+  const leave = await prisma.$transaction(async (tx) => {
+    const updated = await tx.leaveRequest.update({
+      where: { id: req.params.id },
+      data: { status, reviewedById: req.user!.id },
+      include,
+    });
+    await logActivity(
+      {
+        userId: req.user!.id,
+        action: status === "APPROVED" ? "leave.approve" : "leave.reject",
+        message: `${verb}คำขอ${TYPE_LABEL[updated.type]}ของ ${existing.user.name}`,
+        entityType: "leave",
+        entityId: updated.id,
+      },
+      tx
+    );
+    return updated;
   });
 
-  // Notify the requester of the decision (unless they reviewed their own).
-  if (leave.userId !== req.user!.id) {
-    await notify({
-      userId: leave.userId,
-      type: status === "APPROVED" ? "leave.approved" : "leave.rejected",
-      title: status === "APPROVED" ? "คำขอลาได้รับอนุมัติ" : "คำขอลาถูกปฏิเสธ",
-      message: `คำขอ${TYPE_LABEL[leave.type]}ของคุณถูก${verb}แล้ว`,
-      entityType: "leave",
-      entityId: leave.id,
-    });
+  // Side effects run AFTER commit and must never fail the request.
+  try {
+    // Notify the requester of the decision (unless they reviewed their own).
+    if (leave.userId !== req.user!.id) {
+      await notify({
+        userId: leave.userId,
+        type: status === "APPROVED" ? "leave.approved" : "leave.rejected",
+        title: status === "APPROVED" ? "คำขอลาได้รับอนุมัติ" : "คำขอลาถูกปฏิเสธ",
+        message: `คำขอ${TYPE_LABEL[leave.type]}ของคุณถูก${verb}แล้ว`,
+        entityType: "leave",
+        entityId: leave.id,
+      });
+    }
+    await pushLeaveCard(status === "APPROVED" ? "APPROVED" : "REJECTED", leave);
+  } catch (err) {
+    console.warn("[leave.decide] post-commit side-effect failed:", err);
   }
-
-  await pushLeaveCard(status === "APPROVED" ? "APPROVED" : "REJECTED", leave);
 
   res.json({ leave });
 }
