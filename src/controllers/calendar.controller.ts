@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
+import { isTeamManager } from "../lib/authz";
 import type {
   CalendarQuery,
   CreateEventInput,
@@ -27,7 +28,7 @@ export async function listEvents(req: Request, res: Response) {
   const endExclusive = new Date(Date.UTC(y, m, 1, 0, 0, 0));
   const endInclusive = new Date(endExclusive.getTime() - 1);
 
-  const isManager = req.user!.role === "MANAGER" || req.user!.role === "ADMIN";
+  const isManager = isTeamManager(req);
 
   const [events, tasks, reports, leaves, holidays, setting] = await Promise.all([
     prisma.calendarEvent.findMany({

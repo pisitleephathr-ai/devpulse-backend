@@ -22,14 +22,23 @@ export async function authenticate(
     // the DB (via roleRef) so role changes take effect immediately.
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, role: true, active: true, roleRef: { select: { code: true } } },
+      select: {
+        id: true,
+        role: true,
+        active: true,
+        roleRef: { select: { code: true, permissions: true } },
+      },
     });
 
     if (!user || !user.active) {
       throw new AppError(401, "บัญชีถูกปิดใช้งานหรือไม่พบผู้ใช้ (Unauthorized)");
     }
 
-    req.user = { id: user.id, role: user.roleRef?.code ?? user.role ?? "DEVELOPER" };
+    req.user = {
+      id: user.id,
+      role: user.roleRef?.code ?? user.role ?? "DEVELOPER",
+      permissions: user.roleRef?.permissions ?? [],
+    };
     next();
   } catch (err) {
     if (err instanceof AppError) return next(err);

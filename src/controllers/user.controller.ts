@@ -31,11 +31,20 @@ async function resolveRoleId(input: { roleId?: string; roleCode?: string }) {
 async function assertNotLastAdmin(userId: string) {
   const target = await prisma.user.findUnique({
     where: { id: userId },
-    select: { active: true, roleRef: { select: { code: true } } },
+    select: { active: true, roleRef: { select: { code: true, permissions: true } } },
   });
-  if (!target || !target.active || target.roleRef?.code !== "ADMIN") return;
+  const targetIsAdmin =
+    target?.roleRef?.code === "ADMIN" ||
+    (target?.roleRef?.permissions?.includes("ADMIN_FULL") ?? false);
+  if (!target || !target.active || !targetIsAdmin) return;
+  // Count active users with admin access (ADMIN code OR the ADMIN_FULL grant).
   const activeAdmins = await prisma.user.count({
-    where: { active: true, roleRef: { is: { code: "ADMIN" } } },
+    where: {
+      active: true,
+      roleRef: {
+        is: { OR: [{ code: "ADMIN" }, { permissions: { has: "ADMIN_FULL" } }] },
+      },
+    },
   });
   if (activeAdmins <= 1) {
     throw new AppError(400, "ต้องมีผู้ดูแลระบบ (ADMIN) ที่ใช้งานอยู่อย่างน้อย 1 คน");

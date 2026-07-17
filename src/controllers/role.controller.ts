@@ -35,6 +35,7 @@ export async function createRole(req: Request, res: Response) {
       description: data.description?.trim() ?? "",
       isActive: data.isActive ?? true,
       isSystem: false,
+      permissions: data.permissions ? [...new Set(data.permissions)] : [],
     },
   });
 
@@ -58,6 +59,10 @@ export async function updateRole(req: Request, res: Response) {
   if (role.isSystem && data.isActive === false) {
     throw new AppError(400, "ไม่สามารถปิดใช้งานบทบาทระบบได้");
   }
+  // System roles' capabilities are fixed — don't allow stripping ADMIN_FULL etc.
+  if (role.isSystem && data.permissions) {
+    throw new AppError(400, "ไม่สามารถแก้สิทธิ์ของบทบาทระบบได้");
+  }
 
   const updated = await prisma.role.update({
     where: { id: role.id },
@@ -65,6 +70,9 @@ export async function updateRole(req: Request, res: Response) {
       name: data.name,
       description: data.description,
       isActive: data.isActive,
+      ...(data.permissions
+        ? { permissions: [...new Set(data.permissions)] }
+        : {}),
     },
   });
 

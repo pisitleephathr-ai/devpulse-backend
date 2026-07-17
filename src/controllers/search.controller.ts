@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
+import { isTeamManager } from "../lib/authz";
 
 type SearchResult = {
   id: string;
@@ -32,7 +33,7 @@ export async function search(req: Request, res: Response) {
   const q = String(req.query.q ?? "").trim();
   if (q.length < 1) return res.json({ results: [] });
 
-  const isManager = req.user!.role === "MANAGER" || req.user!.role === "ADMIN";
+  const isManager = isTeamManager(req);
   const contains = { contains: q, mode: insensitive };
 
   const leaveWhere: Prisma.LeaveRequestWhereInput = {
