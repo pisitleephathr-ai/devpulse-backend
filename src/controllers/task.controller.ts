@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
 import { notifyMany } from "../lib/notify";
-import { pushFlexToLineGroup, appBaseUrl } from "../lib/line";
+import { pushFlexToLineGroup, appBaseUrl, getLinePrefs } from "../lib/line";
 import { taskCreatedFlex, taskStatusFlex } from "../lib/line-messages";
 import { isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
@@ -24,12 +24,6 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
   DONE: "เสร็จแล้ว",
 };
 
-/**
- * Which status changes are worth a LINE push. Limited to TODO and DONE to save
- * the OA message quota — the noisy intermediate moves (IN_PROGRESS, REVIEW) are
- * skipped on LINE but still create in-app notifications for assignees.
- */
-const LINE_NOTIFY_STATUSES: TaskStatus[] = ["TODO", "DONE"];
 
 const include = {
   assignee: { select: userMiniSelect },
@@ -171,7 +165,9 @@ export async function createTask(req: Request, res: Response) {
     }
   );
 
-  // Announce the new task to the team's LINE group as a rich Flex card.
+  // Announce the new task to the team's LINE group as a rich Flex card
+  // (only when the team has LINE "new task" notifications enabled).
+  if ((await getLinePrefs()).notifyNewTask) {
   const creator = await prisma.user.findUnique({
     where: { id: req.user!.id },
     select: { name: true },
@@ -191,6 +187,7 @@ export async function createTask(req: Request, res: Response) {
     base ? `${base}/tasks?task=${task.id}` : undefined
   );
   await pushFlexToLineGroup(card.altText, card.contents);
+  }
 
   res.status(201).json({ task: flatten(task) });
 }
@@ -293,7 +290,7 @@ export async function updateTask(req: Request, res: Response) {
     task &&
     before &&
     task.status !== before.status &&
-    LINE_NOTIFY_STATUSES.includes(task.status)
+    (await getLinePrefs()).statuses.includes(task.status)
   ) {
     const mover = await prisma.user.findUnique({
       where: { id: req.user!.id },
@@ -351,9 +348,12 @@ export async function updateTaskStatus(req: Request, res: Response) {
     }
   );
 
-  // Announce the status change to the team's LINE group as a Flex card — only
-  // for TODO/DONE (quota saving), and only when the status actually changed.
-  if (before?.status !== status && LINE_NOTIFY_STATUSES.includes(status)) {
+  // Announce the status change to LINE — only for statuses the team enabled,
+  // and only when the status actually changed.
+  if (
+    before?.status !== status &&
+    (await getLinePrefs()).statuses.includes(status)
+  ) {
     const mover = await prisma.user.findUnique({
       where: { id: req.user!.id },
       select: { name: true },

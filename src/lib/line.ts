@@ -68,6 +68,24 @@ export async function getLineQuota(): Promise<LineQuota | null> {
   }
 }
 
+/** Team LINE notification preferences (which task events fan out to the group). */
+export type LinePrefs = { notifyNewTask: boolean; statuses: string[] };
+
+/** Read the team's LINE notification prefs (best-effort, safe defaults). */
+export async function getLinePrefs(): Promise<LinePrefs> {
+  try {
+    const s = await prisma.teamSetting.findFirst({
+      select: { lineNotifyNewTask: true, lineNotifyStatuses: true },
+    });
+    return {
+      notifyNewTask: s?.lineNotifyNewTask ?? true,
+      statuses: s?.lineNotifyStatuses ?? ["TODO", "DONE"],
+    };
+  } catch {
+    return { notifyNewTask: true, statuses: ["TODO", "DONE"] };
+  }
+}
+
 /** A LINE message object (text or flex). Kept loose — shapes are built by callers. */
 export type LineMessage = Record<string, unknown>;
 

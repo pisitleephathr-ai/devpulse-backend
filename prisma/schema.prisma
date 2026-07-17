@@ -417,5 +417,9 @@ model TeamSetting {
   /// LINE group id the OA bot is in, auto-captured from webhook events. Task
   /// notifications are pushed here when LINE is enabled. Null = not linked yet.
   lineGroupId               String?
+  /// LINE OA notification prefs — which task events fan out to the group.
+  lineNotifyNewTask         Boolean  @default(true)
+  /// task statuses that trigger a LINE card when moved to them
+  lineNotifyStatuses        String[] @default(["TODO", "DONE"])
   updatedAt          DateTime @updatedAt
 }
