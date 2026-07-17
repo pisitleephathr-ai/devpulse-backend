@@ -324,19 +324,73 @@ export function leaveTodayFlex(
   return { altText: `🌴 วันนี้มีคนลา ${entries.length} คน`, contents };
 }
 
-/** Flex card summarizing daily-report submission (submitted vs missing). */
+/** Trim + collapse whitespace and cap a snippet's length for a compact card. */
+function clip(text: string, max = 90): string {
+  const s = (text || "").replace(/\s+/g, " ").trim();
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+/** One submitter block: bold name (+ blocker flag) over a muted summary line. */
+function reportEntryLine(entry: ReportEntry): LineMessage {
+  const nameRow: LineMessage[] = [
+    { type: "text", text: entry.name, color: INK, size: "sm", weight: "bold", flex: 0 },
+  ];
+  if (entry.blocked) {
+    nameRow.push({
+      type: "text",
+      text: "⚠ ติดปัญหา",
+      color: "#dc2626",
+      size: "xs",
+      flex: 0,
+      margin: "sm",
+    });
+  }
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "none",
+    margin: "md",
+    contents: [
+      { type: "box", layout: "baseline", spacing: "sm", contents: nameRow },
+      { type: "text", text: clip(entry.detail) || "—", color: MUTED, size: "xs", wrap: true },
+    ],
+  };
+}
+
+export type ReportEntry = { name: string; detail: string; blocked: boolean };
+
+/**
+ * Flex card summarizing daily-report submission: a per-person breakdown of what
+ * each submitter reported (brief), plus who still hasn't sent one.
+ */
 export function reportSummaryFlex(
   today: Date,
-  data: { submitted: number; total: number; missingNames: string[] },
+  data: { total: number; submitted: ReportEntry[]; missingNames: string[] },
   url?: string
 ): { altText: string; contents: LineMessage } {
-  const done = data.missingNames.length === 0;
   const body: LineMessage[] = [
-    titleLine(`ส่งแล้ว ${data.submitted}/${data.total} คน`),
+    titleLine(`ส่งแล้ว ${data.submitted.length}/${data.total} คน`),
     { type: "text", text: thaiDate(today), color: MUTED, size: "xs" },
-    { type: "separator", margin: "md", color: HAIRLINE },
   ];
-  if (done) {
+
+  if (data.submitted.length) {
+    body.push({ type: "separator", margin: "md", color: HAIRLINE });
+    // Cap the number of detailed rows so a big team can't blow the bubble size.
+    const MAX_ROWS = 12;
+    for (const e of data.submitted.slice(0, MAX_ROWS)) body.push(reportEntryLine(e));
+    if (data.submitted.length > MAX_ROWS) {
+      body.push({
+        type: "text",
+        text: `…และอีก ${data.submitted.length - MAX_ROWS} คน`,
+        color: MUTED,
+        size: "xs",
+        margin: "md",
+      });
+    }
+  }
+
+  body.push({ type: "separator", margin: "md", color: HAIRLINE });
+  if (data.missingNames.length === 0) {
     body.push({
       type: "text",
       text: "🎉 ส่งรายงานครบทุกคนแล้ว",
@@ -351,13 +405,14 @@ export function reportSummaryFlex(
       { type: "text", text: data.missingNames.join(", "), color: INK, size: "sm", wrap: true }
     );
   }
+
   const contents = shell("📊 สรุปรายงานประจำวัน", body, {
     url,
     headerColor: TEAL,
     buttonLabel: "เปิดดูรายงาน ↗",
   });
   return {
-    altText: `📊 รายงานประจำวัน: ส่งแล้ว ${data.submitted}/${data.total}`,
+    altText: `📊 รายงานประจำวัน: ส่งแล้ว ${data.submitted.length}/${data.total}`,
     contents,
   };
 }
