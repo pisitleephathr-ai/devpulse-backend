@@ -1,6 +1,7 @@
 import { Router } from "express";
 import * as ctrl from "../controllers/task.controller";
 import * as comments from "../controllers/comment.controller";
+import * as checklist from "../controllers/checklist.controller";
 import { authenticate } from "../middleware/auth";
 import { isManagerOrAdmin } from "../middleware/authorize";
 import { validate } from "../middleware/validate";
@@ -14,6 +15,10 @@ import {
   updateTaskSchema,
 } from "../schemas/task.schema";
 import { createCommentSchema, updateCommentSchema } from "../schemas/comment.schema";
+import {
+  createChecklistItemSchema,
+  updateChecklistItemSchema,
+} from "../schemas/checklist.schema";
 import { idParam } from "../schemas/common.schema";
 
 const router = Router();
@@ -66,5 +71,21 @@ router.patch(
   asyncHandler(comments.updateComment)
 );
 router.delete("/:taskId/comments/:commentId", asyncHandler(comments.deleteComment));
+
+// Checklist / subtasks — managers or the task's assignees (enforced in controller).
+router.post(
+  "/:taskId/checklist",
+  validate({ body: createChecklistItemSchema }),
+  asyncHandler(checklist.addChecklistItem)
+);
+router.patch(
+  "/:taskId/checklist/:itemId",
+  validate({ body: updateChecklistItemSchema }),
+  asyncHandler(checklist.updateChecklistItem)
+);
+router.delete(
+  "/:taskId/checklist/:itemId",
+  asyncHandler(checklist.deleteChecklistItem)
+);
 
 export default router;
