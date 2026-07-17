@@ -53,8 +53,32 @@ export async function updateSettings(req: Request, res: Response) {
   const data = req.body as UpdateSettingsInput;
   const existing = await prisma.teamSetting.findFirst();
 
+  // When a daily summary's send time changes, or it's turned on, clear that
+  // summary's per-day "last run" guard so the new schedule applies TODAY instead
+  // of being blocked by an earlier run. Server-set only (not from user input).
+  const extra: {
+    lineReportSummaryLastRun?: null;
+    lineLeaveSummaryLastRun?: null;
+  } = {};
+  if (existing) {
+    const reportRearmed =
+      (data.lineDailyReportSummaryTime !== undefined &&
+        data.lineDailyReportSummaryTime !== existing.lineDailyReportSummaryTime) ||
+      (data.lineDailyReportSummary === true && !existing.lineDailyReportSummary);
+    if (reportRearmed) extra.lineReportSummaryLastRun = null;
+
+    const leaveRearmed =
+      (data.lineDailyLeaveSummaryTime !== undefined &&
+        data.lineDailyLeaveSummaryTime !== existing.lineDailyLeaveSummaryTime) ||
+      (data.lineDailyLeaveSummary === true && !existing.lineDailyLeaveSummary);
+    if (leaveRearmed) extra.lineLeaveSummaryLastRun = null;
+  }
+
   const setting = existing
-    ? await prisma.teamSetting.update({ where: { id: existing.id }, data })
+    ? await prisma.teamSetting.update({
+        where: { id: existing.id },
+        data: { ...data, ...extra },
+      })
     : await prisma.teamSetting.create({ data: { ...DEFAULT_SETTING, ...data } });
 
   res.json({ setting });
