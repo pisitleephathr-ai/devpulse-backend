@@ -15,6 +15,22 @@ async function resolveGroupId(): Promise<string | undefined> {
   }
 }
 
+/**
+ * Whether a push can actually be delivered right now: LINE enabled + token set
+ * AND a target group resolvable. Returns a Thai reason when not, for the
+ * "send test" flow. (Regular pushes stay silent no-ops when not ready.)
+ */
+export async function lineDeliveryStatus(): Promise<{ ready: boolean; reason?: string }> {
+  if (!env.LINE_ENABLED || !env.LINE_CHANNEL_ACCESS_TOKEN) {
+    return { ready: false, reason: "LINE ยังไม่เปิดใช้งานที่เซิร์ฟเวอร์" };
+  }
+  const groupId = await resolveGroupId();
+  if (!groupId) {
+    return { ready: false, reason: "ยังไม่ได้เชื่อมกลุ่ม LINE (เชิญบอทเข้ากลุ่มก่อน)" };
+  }
+  return { ready: true };
+}
+
 const QUOTA_URL = "https://api.line.me/v2/bot/message/quota";
 const CONSUMPTION_URL = "https://api.line.me/v2/bot/message/quota/consumption";
 
