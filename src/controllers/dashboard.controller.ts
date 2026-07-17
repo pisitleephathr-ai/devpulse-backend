@@ -57,7 +57,16 @@ export async function summary(_req: Request, res: Response) {
     }),
     prisma.task.groupBy({ by: ["projectId", "status"], _count: { _all: true } }),
     prisma.project.findMany({ select: { id: true, name: true, code: true, color: true } }),
+    // The dashboard feed shows only team-work activity (tasks, reports, leaves,
+    // projects). People/permission admin events (user.*, role.*) are sensitive
+    // and stay on the dedicated Activity audit page, not the shared dashboard.
     prisma.activityLog.findMany({
+      where: {
+        NOT: [
+          { action: { startsWith: "user." } },
+          { action: { startsWith: "role." } },
+        ],
+      },
       orderBy: { createdAt: "desc" },
       take: 6,
       include: { user: { select: userMiniSelect } },
@@ -139,7 +148,13 @@ export async function insights(_req: Request, res: Response) {
     }),
     prisma.user.findMany({
       where: { active: true },
-      select: { id: true, name: true, avatarKey: true, requiresDailyReport: true },
+      select: {
+        id: true,
+        name: true,
+        avatarKey: true,
+        requiresDailyReport: true,
+        roleRef: { select: { assignable: true } },
+      },
       orderBy: { name: "asc" },
     }),
     prisma.dailyReport.findMany({
@@ -210,11 +225,24 @@ export async function insights(_req: Request, res: Response) {
     else if (g.task.status === "DONE") acc.done += 1;
     byUser.set(g.userId, acc);
   }
+  // Only roles flagged assignable show on the board. Non-assignable roles
+  // (e.g. system admins) are hidden — but still shown if they actually hold
+  // tasks, so no real work is ever hidden from managers.
+  const hasTasks = new Set(workloadGroups.map((g) => g.userId));
   const workload = activeUsers
+    .filter((u) => (u.roleRef?.assignable ?? true) || hasTasks.has(u.id))
     .map((u) => {
       const c = byUser.get(u.id) ?? { todo: 0, inProgress: 0, review: 0, done: 0 };
       const open = c.todo + c.inProgress + c.review;
-      return { ...u, ...c, open, total: open + c.done };
+      return {
+        id: u.id,
+        name: u.name,
+        avatarKey: u.avatarKey,
+        requiresDailyReport: u.requiresDailyReport,
+        ...c,
+        open,
+        total: open + c.done,
+      };
     })
     .sort((a, b) => b.inProgress - a.inProgress || b.open - a.open);
 

@@ -99,6 +99,11 @@ model Role {
   /// ADMIN/MANAGER codes still grant access on their own; permissions let
   /// custom roles gain the same capabilities.
   permissions String[] @default([])
+  /// whether users with this role appear on the task board — i.e. can be
+  /// assigned tasks and show in the dashboard team-workload list. Purely a
+  /// team-membership flag (editable for system roles too, unlike permissions);
+  /// system-admin roles default to false so admins aren't listed as workers.
+  assignable  Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

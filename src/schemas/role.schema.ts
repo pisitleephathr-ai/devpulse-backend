@@ -13,6 +13,8 @@ export const createRoleSchema = z.object({
   isActive: z.boolean().optional(),
   /** capability grants (deduped server-side) */
   permissions: z.array(permission).optional(),
+  /** whether the role appears on the task board (assignable + in workload) */
+  assignable: z.boolean().optional(),
 });
 
 export const updateRoleSchema = z.object({
@@ -20,6 +22,7 @@ export const updateRoleSchema = z.object({
   description: z.string().optional(),
   isActive: z.boolean().optional(),
   permissions: z.array(permission).optional(),
+  assignable: z.boolean().optional(),
 });
 
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;

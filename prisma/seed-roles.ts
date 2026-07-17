@@ -35,6 +35,8 @@ async function main() {
         isSystem: true,
         isActive: true,
         permissions: [...r.permissions],
+        // Only set on create so a later UI toggle is never clobbered by reseed.
+        assignable: r.assignable,
       },
     });
     roleByCode[r.code] = role.id;

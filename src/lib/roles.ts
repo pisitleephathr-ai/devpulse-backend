@@ -15,13 +15,17 @@ export const PERMISSIONS = {
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 export const ALL_PERMISSIONS: Permission[] = Object.values(PERMISSIONS);
 
-/** Default system roles seeded into the Role table (with their capabilities). */
+/**
+ * Default system roles seeded into the Role table (with their capabilities).
+ * `assignable` = appears on the task board (assignable + shown in team workload).
+ * Admins are system managers, not task workers, so they default off.
+ */
 export const DEFAULT_ROLES = [
-  { code: "ADMIN", name: "ผู้ดูแลระบบ", description: "สิทธิ์เต็มทั้งระบบ", permissions: ["ADMIN_FULL", "TEAM_MANAGE"] },
-  { code: "MANAGER", name: "หัวหน้าทีม", description: "จัดการทีมและอนุมัติ", permissions: ["TEAM_MANAGE"] },
-  { code: "DEVELOPER", name: "นักพัฒนา", description: "", permissions: [] },
-  { code: "QA", name: "QA", description: "", permissions: [] },
-  { code: "DESIGNER", name: "Designer", description: "", permissions: [] },
+  { code: "ADMIN", name: "ผู้ดูแลระบบ", description: "สิทธิ์เต็มทั้งระบบ", permissions: ["ADMIN_FULL", "TEAM_MANAGE"], assignable: false },
+  { code: "MANAGER", name: "หัวหน้าทีม", description: "จัดการทีมและอนุมัติ", permissions: ["TEAM_MANAGE"], assignable: true },
+  { code: "DEVELOPER", name: "นักพัฒนา", description: "", permissions: [], assignable: true },
+  { code: "QA", name: "QA", description: "", permissions: [], assignable: true },
+  { code: "DESIGNER", name: "Designer", description: "", permissions: [], assignable: true },
 ] as const;
 
 /** Fields returned for an embedded/related role object. */
