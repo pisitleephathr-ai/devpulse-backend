@@ -14,7 +14,7 @@
     "start:migrate": "prisma migrate deploy && node dist/index.js",
     "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "prisma:generate": "prisma generate",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
