@@ -36,6 +36,7 @@ export async function createRole(req: Request, res: Response) {
       isActive: data.isActive ?? true,
       isSystem: false,
       permissions: data.permissions ? [...new Set(data.permissions)] : [],
+      assignable: data.assignable ?? true,
     },
   });
 
@@ -70,6 +71,9 @@ export async function updateRole(req: Request, res: Response) {
       name: data.name,
       description: data.description,
       isActive: data.isActive,
+      // "assignable" is a team-membership flag, not a capability — allow it to
+      // be toggled on system roles too (unlike permissions, gated above).
+      assignable: data.assignable,
       ...(data.permissions
         ? { permissions: [...new Set(data.permissions)] }
         : {}),
