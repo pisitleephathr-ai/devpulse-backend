@@ -162,21 +162,26 @@ export async function deleteUser(req: Request, res: Response) {
   if (req.params.id === req.user!.id) {
     throw new AppError(400, "ไม่สามารถลบบัญชีของตนเองได้");
   }
+  // Still block removing the last active admin (a lockout risk, not just data
+  // loss). Otherwise a hard delete is allowed and cascades away the user's
+  // reports/leaves/activity (assigned tasks are un-assigned, not deleted).
   await assertNotLastAdmin(req.params.id);
 
-  // Hard delete cascades away the user's reports, leaves, and audit trail.
-  // Preserve that history: block deletion when it exists (deactivate instead).
-  const [reports, leaves] = await Promise.all([
-    prisma.dailyReport.count({ where: { authorId: req.params.id } }),
-    prisma.leaveRequest.count({ where: { userId: req.params.id } }),
-  ]);
-  if (reports > 0 || leaves > 0) {
-    throw new AppError(
-      400,
-      "ผู้ใช้นี้มีประวัติรายงานหรือการลา — กรุณาปิดใช้งานแทนการลบเพื่อรักษาข้อมูล"
-    );
-  }
+  const existing = await prisma.user.findUnique({
+    where: { id: req.params.id },
+    select: { name: true },
+  });
+  if (!existing) throw new AppError(404, "ไม่พบผู้ใช้");
 
   await prisma.user.delete({ where: { id: req.params.id } });
+
+  await logActivity({
+    userId: req.user!.id,
+    action: "user.delete",
+    message: `ลบผู้ใช้ ${existing.name}`,
+    entityType: "user",
+    entityId: req.params.id,
+  });
+
   res.status(204).send();
 }
