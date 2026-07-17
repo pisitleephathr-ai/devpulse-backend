@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "./error";
-import { isFullAdmin, isTeamManager } from "../lib/authz";
+import { isFullAdmin, isTeamManager, hasPermission } from "../lib/authz";
+import type { Permission } from "../lib/roles";
 
 /**
  * Restrict a route to the given role codes. Use after `authenticate`.
@@ -14,6 +15,20 @@ export function authorize(...codes: string[]) {
     if (codes.includes(req.user.role)) return next();
     if (codes.includes("ADMIN") && isFullAdmin(req)) return next();
     if (codes.includes("MANAGER") && isTeamManager(req)) return next();
+    return next(new AppError(403, "ไม่มีสิทธิ์ดำเนินการ (Forbidden)"));
+  };
+}
+
+/**
+ * Restrict a route to holders of ANY of the given fine-grained capabilities.
+ * Capability implications apply (ADMIN_FULL → all, TEAM_MANAGE → manager set),
+ * so system ADMIN/MANAGER roles and equivalent custom roles both pass. Use this
+ * for new fine-grained guards instead of scattering role-code checks.
+ */
+export function requirePermission(...permissions: Permission[]) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user) return next(new AppError(401, "ต้องเข้าสู่ระบบก่อน"));
+    if (permissions.some((p) => hasPermission(req, p))) return next();
     return next(new AppError(403, "ไม่มีสิทธิ์ดำเนินการ (Forbidden)"));
   };
 }

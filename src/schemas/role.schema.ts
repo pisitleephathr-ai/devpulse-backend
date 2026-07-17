@@ -1,6 +1,9 @@
 import { z } from "zod";
+import { ALL_PERMISSIONS } from "../lib/roles";
 
-const permission = z.enum(["TEAM_MANAGE", "ADMIN_FULL"]);
+// Allowlist role permissions against the canonical capability set (no arbitrary
+// strings) — single source of truth in src/lib/roles.ts.
+const permission = z.enum(ALL_PERMISSIONS as [string, ...string[]]);
 
 export const createRoleSchema = z.object({
   name: z.string().min(1),
