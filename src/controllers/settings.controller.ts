@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { env } from "../lib/env";
+import { getLineQuota } from "../lib/line";
 import type {
   CreateHolidayInput,
   CreateLeaveTypeInput,
@@ -27,10 +28,16 @@ export async function getSettings(_req: Request, res: Response) {
     setting = await prisma.teamSetting.create({ data: DEFAULT_SETTING });
   }
   // Surface LINE integration status so the settings UI can show connection state
-  // (without exposing secrets — only whether it's enabled and a group is linked).
+  // (without exposing secrets — only whether it's enabled, a group is linked,
+  // and this month's message quota/usage).
+  const quota = await getLineQuota();
   res.json({
     setting,
-    line: { enabled: env.LINE_ENABLED, groupConnected: !!setting.lineGroupId },
+    line: {
+      enabled: env.LINE_ENABLED,
+      groupConnected: !!setting.lineGroupId,
+      quota,
+    },
   });
 }
 

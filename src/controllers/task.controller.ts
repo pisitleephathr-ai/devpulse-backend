@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
 import { notifyMany } from "../lib/notify";
-import { pushFlexToLineGroup } from "../lib/line";
+import { pushFlexToLineGroup, appBaseUrl } from "../lib/line";
 import { taskCreatedFlex, taskStatusFlex } from "../lib/line-messages";
 import { isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
@@ -168,16 +168,20 @@ export async function createTask(req: Request, res: Response) {
     where: { id: req.user!.id },
     select: { name: true },
   });
-  const card = taskCreatedFlex({
-    title: task.title,
-    projectName: task.project.name,
-    projectCode: task.project.code,
-    priority: task.priority,
-    status: task.status,
-    dueDate: task.dueDate,
-    assignees: task.assignees.map((a) => a.user.name),
-    actorName: creator?.name ?? "ระบบ",
-  });
+  const base = appBaseUrl();
+  const card = taskCreatedFlex(
+    {
+      title: task.title,
+      projectName: task.project.name,
+      projectCode: task.project.code,
+      priority: task.priority,
+      status: task.status,
+      dueDate: task.dueDate,
+      assignees: task.assignees.map((a) => a.user.name),
+      actorName: creator?.name ?? "ระบบ",
+    },
+    base ? `${base}/tasks?task=${task.id}` : undefined
+  );
   await pushFlexToLineGroup(card.altText, card.contents);
 
   res.status(201).json({ task: flatten(task) });
@@ -319,13 +323,18 @@ export async function updateTaskStatus(req: Request, res: Response) {
       where: { id: req.user!.id },
       select: { name: true },
     });
-    const statusCard = taskStatusFlex({
-      title: task.title,
-      projectCode: task.project.code,
-      fromStatus: before?.status ?? null,
-      toStatus: status,
-      actorName: mover?.name ?? "ระบบ",
-    });
+    const base = appBaseUrl();
+    const statusCard = taskStatusFlex(
+      {
+        title: task.title,
+        projectName: task.project.name,
+        projectCode: task.project.code,
+        fromStatus: before?.status ?? null,
+        toStatus: status,
+        actorName: mover?.name ?? "ระบบ",
+      },
+      base ? `${base}/tasks?task=${task.id}` : undefined
+    );
     await pushFlexToLineGroup(statusCard.altText, statusCard.contents);
   }
 

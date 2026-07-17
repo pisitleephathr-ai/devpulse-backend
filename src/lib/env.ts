@@ -10,6 +10,9 @@ const schema = z.object({
     .enum(["development", "production", "test"])
     .default("development"),
   CORS_ORIGIN: z.string().default("*"),
+  // Public frontend URL, used to build "open task" links in LINE cards.
+  // Falls back to CORS_ORIGIN when it's a single URL.
+  APP_URL: z.string().optional(),
   // LINE Official Account push notifications (optional; disabled by default).
   // When LINE_ENABLED is true, task notifications are also pushed to the team's
   // LINE group (LINE_GROUP_ID) via the Messaging API channel access token.
