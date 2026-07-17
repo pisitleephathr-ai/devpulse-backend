@@ -1,15 +1,21 @@
-import { test } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
 
 // jwt.ts imports env.ts, which validates process.env at load and exits on
 // misconfig. Provide safe defaults (only if the CI env hasn't already set them)
-// BEFORE importing, then load the module dynamically.
+// BEFORE the module loads. Import happens in a `before` hook — not top-level —
+// because this package compiles as CommonJS, where top-level await is illegal.
 process.env.DATABASE_URL ??=
   "postgresql://user:pass@localhost:5432/devpulse_test?schema=public";
 process.env.JWT_SECRET ??= "test-secret-that-is-at-least-16-characters";
 process.env.NODE_ENV ??= "test";
 
-const { signToken, verifyToken } = await import("../src/lib/jwt");
+let signToken: (payload: { sub: string; role: string }) => string;
+let verifyToken: (token: string) => { sub: string; role: string };
+
+before(async () => {
+  ({ signToken, verifyToken } = await import("../src/lib/jwt"));
+});
 
 test("signToken/verifyToken round-trips the payload", () => {
   const token = signToken({ sub: "user-1", role: "ADMIN" });
