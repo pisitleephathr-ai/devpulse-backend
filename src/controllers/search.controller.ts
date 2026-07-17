@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { isTeamManager } from "../lib/authz";
+import { getBangkokDateString } from "../lib/date";
 
 type SearchResult = {
   id: string;
@@ -109,7 +110,7 @@ export async function search(req: Request, res: Response) {
       id: r.id,
       type: "REPORT" as const,
       title: `รายงาน: ${r.author.name}`,
-      subtitle: [r.project?.name, new Date(r.date).toISOString().slice(0, 10)]
+      subtitle: [r.project?.name, getBangkokDateString(new Date(r.date))]
         .filter(Boolean)
         .join(" · "),
       url: "/reports",
@@ -142,7 +143,7 @@ export async function search(req: Request, res: Response) {
       id: e.id,
       type: "CALENDAR" as const,
       title: e.title,
-      subtitle: new Date(e.startDate).toISOString().slice(0, 10),
+      subtitle: getBangkokDateString(new Date(e.startDate)),
       url: "/calendar",
     })),
   ];

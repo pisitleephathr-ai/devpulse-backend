@@ -1,11 +1,9 @@
 import { z } from "zod";
+import { isSameBangkokDay } from "../lib/date";
 
 const type = z.enum(["VACATION", "SICK", "PERSONAL", "PARENTAL"]);
 const status = z.enum(["PENDING", "APPROVED", "REJECTED"]);
 const halfDayPeriod = z.enum(["MORNING", "AFTERNOON"]);
-
-const sameUtcDay = (a: Date, b: Date) =>
-  a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
 
 export const createLeaveSchema = z
   .object({
@@ -22,7 +20,7 @@ export const createLeaveSchema = z
     message: "วันที่สิ้นสุดต้องไม่มาก่อนวันที่เริ่ม",
     path: ["endDate"],
   })
-  .refine((d) => !d.halfDayPeriod || sameUtcDay(d.startDate, d.endDate), {
+  .refine((d) => !d.halfDayPeriod || isSameBangkokDay(d.startDate, d.endDate), {
     message: "การลาครึ่งวันต้องเป็นวันเดียวกัน",
     path: ["halfDayPeriod"],
   });

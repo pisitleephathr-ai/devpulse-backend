@@ -2,6 +2,11 @@ import type { Request, Response } from "express";
 import type { TaskStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
+import {
+  getBangkokDateString,
+  bangkokDateToUtcRange,
+  startOfBangkokDayUtc,
+} from "../lib/date";
 
 const NO_BLOCKER = new Set(["", "ไม่มี", "—", "วันนี้ไม่มี", "-", "ไม่มีครับ", "ไม่มีค่ะ"]);
 
@@ -19,15 +24,9 @@ function cleanBlocker(s: string) {
   return NO_BLOCKER.has(s.trim()) ? "" : s.trim();
 }
 
-/** Today's date (YYYY-MM-DD) in Asia/Bangkok — matches /standup and /reports. */
-function bangkokToday(): string {
-  return new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
-}
-/** UTC range covering a Bangkok calendar day (reports stored at UTC midnight). */
-function bangkokDayRange(dateStr: string) {
-  const start = new Date(`${dateStr}T00:00:00.000Z`);
-  return { gte: start, lt: new Date(start.getTime() + 24 * 3_600_000) };
-}
+// Bangkok date helpers come from src/lib/date.ts (single source of truth).
+const bangkokToday = getBangkokDateString;
+const bangkokDayRange = bangkokDateToUtcRange;
 
 export async function summary(_req: Request, res: Response) {
   // "Today" = the current Asia/Bangkok day, consistent with /standup and /reports.
@@ -291,10 +290,10 @@ export async function insights(_req: Request, res: Response) {
  */
 export async function reportTrend(req: Request, res: Response) {
   const days = Math.min(60, Math.max(1, Number(req.query.days) || 14));
-  // Bangkok "today" (UTC+7) as a YYYY-MM-DD string, then UTC midnight of it.
-  const todayStr = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
-  const start = new Date(`${todayStr}T00:00:00.000Z`);
-  start.setUTCDate(start.getUTCDate() - (days - 1));
+  // Anchor at 00:00 Bangkok today, then walk back N-1 Bangkok days.
+  const todayAnchor = startOfBangkokDayUtc(getBangkokDateString());
+  const dayMs = 24 * 60 * 60 * 1000;
+  const start = new Date(todayAnchor.getTime() - (days - 1) * dayMs);
 
   const [rows, required] = await Promise.all([
     prisma.dailyReport.findMany({
@@ -304,9 +303,10 @@ export async function reportTrend(req: Request, res: Response) {
     prisma.user.count({ where: { active: true, requiresDailyReport: true } }),
   ]);
 
+  // Bucket by the report's Bangkok day (not its UTC day).
   const byDay = new Map<string, Set<string>>();
   for (const r of rows) {
-    const key = r.date.toISOString().slice(0, 10);
+    const key = getBangkokDateString(r.date);
     let set = byDay.get(key);
     if (!set) {
       set = new Set();
@@ -317,9 +317,7 @@ export async function reportTrend(req: Request, res: Response) {
 
   const series: { date: string; submitted: number }[] = [];
   for (let i = 0; i < days; i++) {
-    const d = new Date(start);
-    d.setUTCDate(start.getUTCDate() + i);
-    const key = d.toISOString().slice(0, 10);
+    const key = getBangkokDateString(new Date(start.getTime() + i * dayMs));
     series.push({ date: key, submitted: byDay.get(key)?.size ?? 0 });
   }
 

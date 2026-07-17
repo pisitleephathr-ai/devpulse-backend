@@ -2,23 +2,16 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { notifyMany } from "../lib/notify";
+import { getBangkokDateString, bangkokDateToUtcRange } from "../lib/date";
 
 const NO_BLOCKER = new Set(["", "ไม่มี", "—", "-", "วันนี้ไม่มี", "ไม่มีครับ", "ไม่มีค่ะ"]);
 function cleanBlocker(s: string) {
   return NO_BLOCKER.has(s.trim()) ? "" : s.trim();
 }
 
-/** Today's date (YYYY-MM-DD) in Asia/Bangkok, computed server-side (UTC+7). */
-function bangkokToday(): string {
-  return new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
-}
-
-/** UTC range covering a Bangkok calendar day (reports are stored at UTC midnight). */
-function dayRange(dateStr: string) {
-  const start = new Date(`${dateStr}T00:00:00.000Z`);
-  const end = new Date(start.getTime() + 24 * 3_600_000);
-  return { gte: start, lt: end };
-}
+// Bangkok date helpers come from src/lib/date.ts (single source of truth).
+const bangkokToday = getBangkokDateString;
+const dayRange = bangkokDateToUtcRange;
 
 /**
  * GET /api/standup?date=YYYY-MM-DD — the daily standup summary for a Bangkok day
