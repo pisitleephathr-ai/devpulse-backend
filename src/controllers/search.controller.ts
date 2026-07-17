@@ -101,7 +101,8 @@ export async function search(req: Request, res: Response) {
       type: "TASK" as const,
       title: t.title,
       subtitle: [t.project?.name, t.assignee?.name].filter(Boolean).join(" · "),
-      url: "/tasks",
+      // Deep-link straight to the task's card on the board.
+      url: `/tasks?task=${t.id}`,
       metadata: { status: t.status, priority: t.priority },
     })),
     ...reports.map((r) => ({
