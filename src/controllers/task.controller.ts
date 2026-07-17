@@ -23,6 +23,13 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
   DONE: "เสร็จแล้ว",
 };
 
+/**
+ * Which status changes are worth a LINE push. Limited to TODO and DONE to save
+ * the OA message quota — the noisy intermediate moves (IN_PROGRESS, REVIEW) are
+ * skipped on LINE but still create in-app notifications for assignees.
+ */
+const LINE_NOTIFY_STATUSES: TaskStatus[] = ["TODO", "DONE"];
+
 const include = {
   assignee: { select: userMiniSelect },
   assignees: {
@@ -316,9 +323,9 @@ export async function updateTaskStatus(req: Request, res: Response) {
     }
   );
 
-  // Announce the status change to the team's LINE group as a Flex card
-  // (skip when the status didn't actually change — e.g. dropped in place).
-  if (before?.status !== status) {
+  // Announce the status change to the team's LINE group as a Flex card — only
+  // for TODO/DONE (quota saving), and only when the status actually changed.
+  if (before?.status !== status && LINE_NOTIFY_STATUSES.includes(status)) {
     const mover = await prisma.user.findUnique({
       where: { id: req.user!.id },
       select: { name: true },
