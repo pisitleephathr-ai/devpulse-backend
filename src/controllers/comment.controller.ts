@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
+import { notifyMany } from "../lib/notify";
 import { isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
 import type {
@@ -37,7 +38,7 @@ export async function listComments(req: Request, res: Response) {
 
 export async function createComment(req: Request, res: Response) {
   const task = await ensureTask(req.params.taskId);
-  const { message } = req.body as CreateCommentInput;
+  const { message, mentionedUserIds } = req.body as CreateCommentInput;
 
   const comment = await prisma.taskComment.create({
     data: { taskId: task.id, authorId: req.user!.id, message: message.trim() },
@@ -51,6 +52,27 @@ export async function createComment(req: Request, res: Response) {
     entityType: "task",
     entityId: task.id,
   });
+
+  // Notify @mentioned users (real, active, not the author).
+  if (mentionedUserIds?.length) {
+    const recipients = await prisma.user.findMany({
+      where: {
+        id: { in: [...new Set(mentionedUserIds)], not: req.user!.id },
+        active: true,
+      },
+      select: { id: true },
+    });
+    await notifyMany(
+      recipients.map((u) => u.id),
+      {
+        type: "mention",
+        title: "ถูกกล่าวถึงในความคิดเห็น",
+        message: `${comment.author.name} กล่าวถึงคุณในงาน "${task.title}"`,
+        entityType: "task",
+        entityId: task.id,
+      }
+    );
+  }
 
   res.status(201).json({ comment });
 }
