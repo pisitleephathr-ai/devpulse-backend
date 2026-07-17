@@ -2,6 +2,12 @@ import { env } from "./env";
 import { prisma } from "./prisma";
 import { appBaseUrl, pushFlexToLineGroup, lineDeliveryStatus } from "./line";
 import {
+  getBangkokDateString,
+  getBangkokHM,
+  getBangkokWeekday,
+  bangkokDateToUtcRange,
+} from "./date";
+import {
   leaveTodayFlex,
   reportSummaryFlex,
   type LeaveTodayEntry,
@@ -23,28 +29,12 @@ import {
  *  - Only fires on configured working days. Best-effort — never throws.
  */
 
-/** Bangkok "now" as a Date shifted into UTC+7 wall-clock (for slice math). */
-function bangkokNow(): Date {
-  return new Date(Date.now() + 7 * 3_600_000);
-}
-/** Today (YYYY-MM-DD) in Asia/Bangkok. */
-function bangkokToday(): string {
-  return bangkokNow().toISOString().slice(0, 10);
-}
-/** Current wall-clock "HH:mm" in Asia/Bangkok. */
-function bangkokHM(): string {
-  return bangkokNow().toISOString().slice(11, 16);
-}
-/** Weekday number (0=Sun … 6=Sat) in Asia/Bangkok. */
-function bangkokWeekday(): number {
-  return bangkokNow().getUTCDay();
-}
-/** UTC range covering a Bangkok calendar day. */
-function dayRange(dateStr: string) {
-  const gte = new Date(`${dateStr}T00:00:00.000Z`);
-  const lt = new Date(gte.getTime() + 24 * 3_600_000);
-  return { gte, lt };
-}
+// Bangkok date/time helpers now come from src/lib/date.ts (single source).
+const bangkokToday = getBangkokDateString;
+const bangkokHM = getBangkokHM;
+const bangkokWeekday = getBangkokWeekday;
+const dayRange = bangkokDateToUtcRange;
+
 /** Normalize a stored time to "HH:mm" (defensive against stray input). */
 function hm(value: string | null | undefined, fallback: string): string {
   const m = (value ?? "").match(/(\d{1,2}):(\d{2})/);
