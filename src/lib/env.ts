@@ -10,6 +10,12 @@ const schema = z.object({
     .enum(["development", "production", "test"])
     .default("development"),
   CORS_ORIGIN: z.string().default("*"),
+  // LINE Official Account push notifications (optional; disabled by default).
+  // When LINE_ENABLED is true, task notifications are also pushed to the team's
+  // LINE group (LINE_GROUP_ID) via the Messaging API channel access token.
+  LINE_ENABLED: z.coerce.boolean().default(false),
+  LINE_CHANNEL_ACCESS_TOKEN: z.string().optional(),
+  LINE_GROUP_ID: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);
