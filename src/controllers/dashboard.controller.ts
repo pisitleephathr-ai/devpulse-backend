@@ -189,8 +189,9 @@ export async function insights(_req: Request, res: Response) {
   const todo = countBy("TODO");
   const inProgress = countBy("IN_PROGRESS");
   const review = countBy("REVIEW");
+  const readyToTest = countBy("READY_TO_TEST");
   const done = countBy("DONE");
-  const total = todo + inProgress + review + done;
+  const total = todo + inProgress + review + readyToTest + done;
 
   // Report submission status for the reference day. Only users required to
   // submit a daily report are counted — exempt users never appear as missing
@@ -215,13 +216,16 @@ export async function insights(_req: Request, res: Response) {
   // Per-person workload (open = not done).
   const byUser = new Map<
     string,
-    { todo: number; inProgress: number; review: number; done: number }
+    { todo: number; inProgress: number; review: number; readyToTest: number; done: number }
   >();
   for (const g of workloadGroups) {
-    const acc = byUser.get(g.userId) ?? { todo: 0, inProgress: 0, review: 0, done: 0 };
+    const acc =
+      byUser.get(g.userId) ??
+      { todo: 0, inProgress: 0, review: 0, readyToTest: 0, done: 0 };
     if (g.task.status === "TODO") acc.todo += 1;
     else if (g.task.status === "IN_PROGRESS") acc.inProgress += 1;
     else if (g.task.status === "REVIEW") acc.review += 1;
+    else if (g.task.status === "READY_TO_TEST") acc.readyToTest += 1;
     else if (g.task.status === "DONE") acc.done += 1;
     byUser.set(g.userId, acc);
   }
@@ -232,8 +236,10 @@ export async function insights(_req: Request, res: Response) {
   const workload = activeUsers
     .filter((u) => (u.roleRef?.assignable ?? true) || hasTasks.has(u.id))
     .map((u) => {
-      const c = byUser.get(u.id) ?? { todo: 0, inProgress: 0, review: 0, done: 0 };
-      const open = c.todo + c.inProgress + c.review;
+      const c =
+        byUser.get(u.id) ??
+        { todo: 0, inProgress: 0, review: 0, readyToTest: 0, done: 0 };
+      const open = c.todo + c.inProgress + c.review + c.readyToTest;
       return {
         id: u.id,
         name: u.name,
@@ -252,6 +258,7 @@ export async function insights(_req: Request, res: Response) {
       todo,
       inProgress,
       review,
+      readyToTest,
       done,
       overdue,
       dueToday,

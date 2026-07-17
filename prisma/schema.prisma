@@ -30,6 +30,7 @@ enum TaskStatus {
   TODO
   IN_PROGRESS
   REVIEW
+  READY_TO_TEST
   DONE
 }
 
