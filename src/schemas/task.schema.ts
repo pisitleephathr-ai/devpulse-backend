@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const priority = z.enum(["HIGH", "MEDIUM", "LOW"]);
-const status = z.enum(["TODO", "IN_PROGRESS", "REVIEW", "DONE"]);
+const status = z.enum(["TODO", "IN_PROGRESS", "REVIEW", "READY_TO_TEST", "DONE"]);
 
 export const linkSchema = z.object({
   title: z.string().min(1, "กรุณากรอกชื่อลิงก์"),

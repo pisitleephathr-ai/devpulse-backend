@@ -17,6 +17,7 @@ const STATUS: Record<TaskStatus, { label: string; color: string }> = {
   TODO: { label: "รอดำเนินการ", color: "#6b7280" },
   IN_PROGRESS: { label: "กำลังทำ", color: "#2563eb" },
   REVIEW: { label: "รอตรวจ", color: "#7c3aed" },
+  READY_TO_TEST: { label: "พร้อมทดสอบ", color: "#0891b2" },
   DONE: { label: "เสร็จแล้ว", color: "#16a34a" },
 };
 
@@ -38,13 +39,14 @@ function row(label: string, value: string, valueColor = INK): LineMessage {
     layout: "baseline",
     spacing: "sm",
     contents: [
-      { type: "text", text: label, color: MUTED, size: "sm", flex: 2 },
+      // Wider label column + wrap so Thai labels aren't clipped on the narrow card.
+      { type: "text", text: label, color: MUTED, size: "sm", flex: 4, wrap: true },
       {
         type: "text",
         text: value || "-",
         color: valueColor,
         size: "sm",
-        flex: 5,
+        flex: 6,
         wrap: true,
         weight: valueColor === INK ? "regular" : "bold",
       },
@@ -187,9 +189,12 @@ export function taskStatusFlex(
     [
       titleLine(t.title),
       row("โปรเจกต์", `${t.projectName} (${t.projectCode})`),
-      { type: "box", layout: "baseline", spacing: "sm", contents: [
-        { type: "text", text: "สถานะ", color: MUTED, size: "sm", flex: 2 },
-        { type: "box", layout: "baseline", flex: 5, contents: transition },
+      // Outer box must be "horizontal" (not "baseline") because it holds a
+      // nested box — a baseline box may only contain text/icon/filler, and
+      // nesting a box in it makes LINE reject the whole message with HTTP 400.
+      { type: "box", layout: "horizontal", spacing: "sm", contents: [
+        { type: "text", text: "สถานะ", color: MUTED, size: "sm", flex: 4, gravity: "center" },
+        { type: "box", layout: "baseline", flex: 6, contents: transition },
       ] },
       { type: "separator", margin: "md", color: HAIRLINE },
       actorLine(`โดย ${t.actorName}`),

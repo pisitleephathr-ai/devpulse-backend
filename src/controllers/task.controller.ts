@@ -20,6 +20,7 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
   TODO: "รอดำเนินการ",
   IN_PROGRESS: "กำลังทำ",
   REVIEW: "รอตรวจ",
+  READY_TO_TEST: "พร้อมทดสอบ",
   DONE: "เสร็จแล้ว",
 };
 
