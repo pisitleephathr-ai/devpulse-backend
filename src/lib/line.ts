@@ -1,6 +1,19 @@
 import { env } from "./env";
+import { prisma } from "./prisma";
 
 const PUSH_URL = "https://api.line.me/v2/bot/message/push";
+
+/** Resolve the target group id: the manual env override, else the auto-captured
+ *  one stored on TeamSetting. Returns undefined when neither is set. */
+async function resolveGroupId(): Promise<string | undefined> {
+  if (env.LINE_GROUP_ID) return env.LINE_GROUP_ID;
+  try {
+    const s = await prisma.teamSetting.findFirst({ select: { lineGroupId: true } });
+    return s?.lineGroupId ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Push a plain-text message to the team's LINE group via the Messaging API.
@@ -10,9 +23,9 @@ const PUSH_URL = "https://api.line.me/v2/bot/message/push";
  * in-app notify() contract).
  */
 export async function pushToLineGroup(text: string): Promise<void> {
-  if (!env.LINE_ENABLED || !env.LINE_CHANNEL_ACCESS_TOKEN || !env.LINE_GROUP_ID) {
-    return;
-  }
+  if (!env.LINE_ENABLED || !env.LINE_CHANNEL_ACCESS_TOKEN) return;
+  const groupId = await resolveGroupId();
+  if (!groupId) return;
   try {
     const res = await fetch(PUSH_URL, {
       method: "POST",
@@ -21,7 +34,7 @@ export async function pushToLineGroup(text: string): Promise<void> {
         Authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`,
       },
       body: JSON.stringify({
-        to: env.LINE_GROUP_ID,
+        to: groupId,
         messages: [{ type: "text", text: text.slice(0, 4900) }],
       }),
     });

@@ -15,6 +15,11 @@ const schema = z.object({
   // LINE group (LINE_GROUP_ID) via the Messaging API channel access token.
   LINE_ENABLED: z.coerce.boolean().default(false),
   LINE_CHANNEL_ACCESS_TOKEN: z.string().optional(),
+  // Channel secret — used to verify the X-Line-Signature on incoming webhooks
+  // (required for auto-capturing the group id).
+  LINE_CHANNEL_SECRET: z.string().optional(),
+  // Optional manual override; when empty the group id is auto-captured from a
+  // webhook event and stored on TeamSetting.lineGroupId.
   LINE_GROUP_ID: z.string().optional(),
 });
 

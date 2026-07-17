@@ -18,6 +18,7 @@ import searchRoutes from "./routes/search.routes";
 import standupRoutes from "./routes/standup.routes";
 import calendarRoutes from "./routes/calendar.routes";
 import settingsRoutes from "./routes/settings.routes";
+import { lineWebhook } from "./controllers/line.controller";
 import { errorHandler, notFound } from "./middleware/error";
 
 const app = express();
@@ -35,6 +36,11 @@ app.use(
     credentials: env.CORS_ORIGIN !== "*",
   })
 );
+// LINE webhook must verify X-Line-Signature over the RAW body, so mount it with
+// a raw parser BEFORE the global JSON middleware (json() would consume/reparse
+// the body and break the HMAC).
+app.post("/api/line/webhook", express.raw({ type: "*/*" }), lineWebhook);
+
 app.use(express.json({ limit: "1mb" }));
 if (env.NODE_ENV !== "test") app.use(morgan("dev"));
 
