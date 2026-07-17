@@ -368,9 +368,11 @@ export function reportSummaryFlex(
   data: { total: number; submitted: ReportEntry[]; missingNames: string[] },
   url?: string
 ): { altText: string; contents: LineMessage } {
+  // The date is the headline (which day this is for); the count is redundant
+  // with the "ครบทุกคนแล้ว / ยังไม่ส่ง" line below, so it isn't repeated here.
   const body: LineMessage[] = [
-    titleLine(`ส่งแล้ว ${data.submitted.length}/${data.total} คน`),
-    { type: "text", text: thaiDate(today), color: MUTED, size: "xs" },
+    titleLine(thaiDate(today)),
+    { type: "text", text: `รายงานประจำวัน · ส่งแล้ว ${data.submitted.length}/${data.total}`, color: MUTED, size: "xs" },
   ];
 
   if (data.submitted.length) {

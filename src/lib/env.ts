@@ -24,6 +24,10 @@ const schema = z.object({
   // Optional manual override; when empty the group id is auto-captured from a
   // webhook event and stored on TeamSetting.lineGroupId.
   LINE_GROUP_ID: z.string().optional(),
+  // Shared secret for the external-cron endpoint (POST /api/cron/line-summaries).
+  // When set, callers must present it; lets an external scheduler drive the
+  // daily summaries even while the server would otherwise be idle/asleep.
+  CRON_SECRET: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

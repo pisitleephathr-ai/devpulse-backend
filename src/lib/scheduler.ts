@@ -220,6 +220,16 @@ async function tick(): Promise<void> {
   }
 }
 
+/**
+ * Run one schedule-aware pass on demand — used by the cron endpoint so an
+ * external scheduler can drive the summaries even when the server would
+ * otherwise be idle/asleep. Respects the configured time, working days,
+ * holidays, and per-day dedup exactly like the internal timer.
+ */
+export async function runScheduledSummaries(): Promise<void> {
+  await tick();
+}
+
 /** Arm the daily-summary scheduler. No-op unless LINE is configured. */
 export function startScheduler(): void {
   if (!env.LINE_ENABLED || !env.LINE_CHANNEL_ACCESS_TOKEN) {
