@@ -178,12 +178,27 @@ model Task {
   links       TaskLink[]
   attachments TaskAttachment[]
   comments    TaskComment[]
+  checklist   TaskChecklistItem[]
   /// daily reports that optionally reference this task (additive)
   reportRelations DailyReportRelatedTask[]
 
   @@index([projectId])
   @@index([assigneeId])
   @@index([status])
+}
+
+/// A subtask / checklist item under a task. Cascade-deleted with the task.
+model TaskChecklistItem {
+  id        String   @id @default(cuid())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId    String
+  text      String
+  done      Boolean  @default(false)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId])
 }
 
 /// Optional link between a daily report and a board task it references.

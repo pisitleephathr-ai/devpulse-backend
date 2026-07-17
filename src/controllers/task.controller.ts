@@ -33,17 +33,32 @@ const include = {
 const listInclude = {
   ...include,
   _count: { select: { links: true, attachments: true, comments: true } },
+  // Just the done flags — enough to show "3/5" progress on a board card.
+  checklist: { select: { done: true } },
 } satisfies Prisma.TaskInclude;
 
 const detailInclude = {
   ...include,
   links: { orderBy: { createdAt: "asc" } },
   attachments: { orderBy: { createdAt: "asc" } },
+  checklist: { orderBy: { order: "asc" } },
 } satisfies Prisma.TaskInclude;
 
 /** Flatten the join rows into a plain `assignees` user array for the client. */
 function flatten<T extends { assignees: { user: unknown }[] }>(task: T) {
   return { ...task, assignees: task.assignees.map((a) => a.user) };
+}
+
+/** List-card shape: flatten assignees + collapse the checklist into counts. */
+function flattenListRow<
+  T extends { assignees: { user: unknown }[]; checklist: { done: boolean }[] }
+>(task: T) {
+  const { checklist, ...rest } = flatten(task);
+  return {
+    ...rest,
+    checklistTotal: checklist.length,
+    checklistDone: checklist.filter((c) => c.done).length,
+  };
 }
 
 /** Assignee ids from the request, preferring assigneeIds, falling back to the
@@ -81,7 +96,7 @@ export async function listTasks(req: Request, res: Response) {
     include: listInclude,
     orderBy: { createdAt: "asc" },
   });
-  res.json({ tasks: tasks.map(flatten) });
+  res.json({ tasks: tasks.map(flattenListRow) });
 }
 
 export async function getTask(req: Request, res: Response) {
