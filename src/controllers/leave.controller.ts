@@ -178,3 +178,33 @@ export function approveLeave(req: Request, res: Response) {
 export function rejectLeave(req: Request, res: Response) {
   return decide(req, res, "REJECTED");
 }
+
+/**
+ * Withdraw/cancel a leave request. The owner may cancel their own request while
+ * it is still PENDING; managers/admins may remove any request.
+ */
+export async function deleteLeave(req: Request, res: Response) {
+  const existing = await prisma.leaveRequest.findUnique({
+    where: { id: req.params.id },
+    include: { user: { select: { name: true } } },
+  });
+  if (!existing) throw new AppError(404, "ไม่พบคำขอลา");
+
+  const isManager = req.user!.role === "MANAGER" || req.user!.role === "ADMIN";
+  const isOwner = existing.userId === req.user!.id;
+  if (!isManager && !(isOwner && existing.status === "PENDING")) {
+    throw new AppError(403, "ยกเลิกได้เฉพาะคำขอลาของตนเองที่ยังรออนุมัติ");
+  }
+
+  await prisma.leaveRequest.delete({ where: { id: req.params.id } });
+
+  await logActivity({
+    userId: req.user!.id,
+    action: "leave.delete",
+    message: `ยกเลิกคำขอ${TYPE_LABEL[existing.type]}ของ ${existing.user.name}`,
+    entityType: "leave",
+    entityId: existing.id,
+  });
+
+  res.status(204).send();
+}
