@@ -34,6 +34,10 @@ export const reportQuerySchema = z.object({
   authorId: z.string().optional(),
   projectId: z.string().optional(),
   status: status.optional(),
+  /** pagination — when `limit` is set the response includes total/page/hasMore.
+   *  Omit both for the full (unpaginated) list (backward compatible). */
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(100).optional(),
 });
 
 export type CreateReportInput = z.infer<typeof createReportSchema>;
