@@ -36,4 +36,5 @@ export const roleSelect = {
   isSystem: true,
   isActive: true,
   permissions: true,
+  menuAccess: true,
 } satisfies Prisma.RoleSelect;

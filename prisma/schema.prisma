@@ -104,6 +104,10 @@ model Role {
   /// team-membership flag (editable for system roles too, unlike permissions);
   /// system-admin roles default to false so admins aren't listed as workers.
   assignable  Boolean  @default(true)
+  /// sidebar menu keys this role may see, e.g. ["dashboard","reports"]. Empty
+  /// means "inherit the built-in defaults for this role code". A navigation
+  /// visibility layer only — API routes stay guarded by permissions.
+  menuAccess  String[] @default([])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

@@ -15,6 +15,8 @@ export const createRoleSchema = z.object({
   permissions: z.array(permission).optional(),
   /** whether the role appears on the task board (assignable + in workload) */
   assignable: z.boolean().optional(),
+  /** sidebar menu keys this role may see ([] = inherit code defaults) */
+  menuAccess: z.array(z.string().min(1).max(40)).optional(),
 });
 
 export const updateRoleSchema = z.object({
@@ -23,6 +25,7 @@ export const updateRoleSchema = z.object({
   isActive: z.boolean().optional(),
   permissions: z.array(permission).optional(),
   assignable: z.boolean().optional(),
+  menuAccess: z.array(z.string().min(1).max(40)).optional(),
 });
 
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;
