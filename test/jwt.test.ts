@@ -34,3 +34,9 @@ test("verifyToken rejects a token signed with a different secret", async () => {
   const forged = jwt.sign({ sub: "x", role: "ADMIN" }, "some-other-secret-16ch");
   assert.throws(() => verifyToken(forged));
 });
+
+test("verifyToken rejects an unsigned (alg:none) token", async () => {
+  const jwt = (await import("jsonwebtoken")).default;
+  const unsigned = jwt.sign({ sub: "x", role: "ADMIN" }, "", { algorithm: "none" });
+  assert.throws(() => verifyToken(unsigned));
+});

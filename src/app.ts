@@ -29,7 +29,10 @@ app.use(helmet());
 app.use(
   cors({
     origin: env.CORS_ORIGIN === "*" ? true : env.CORS_ORIGIN.split(","),
-    credentials: true,
+    // Auth is Bearer-token based (no cookies), so credentials aren't needed.
+    // Never combine a wildcard origin with credentials — only allow credentials
+    // when the origin is explicitly restricted.
+    credentials: env.CORS_ORIGIN !== "*",
   })
 );
 app.use(express.json({ limit: "1mb" }));

@@ -52,7 +52,7 @@ All `/api/*` routes except auth require `Authorization: Bearer <token>`.
 | Projects | `GET /api/projects`, `GET /api/projects/:id`, `POST /api/projects`*, `PATCH /api/projects/:id`*, `DELETE /api/projects/:id`† |
 | Reports | `GET /api/reports` (filters: `authorId,projectId,status`), `GET /api/reports/:id`, `POST /api/reports`, `PATCH /api/reports/:id`, `DELETE /api/reports/:id` |
 | Tasks | `GET /api/tasks` (filters: `projectId,assigneeId,status`), `GET /api/tasks/:id`, `POST /api/tasks`, `PATCH /api/tasks/:id`, `PATCH /api/tasks/:id/status`, `DELETE /api/tasks/:id` |
-| Leaves | `GET /api/leaves` (filters: `userId,type,status`), `GET /api/leaves/:id`, `POST /api/leaves`, `PATCH /api/leaves/:id/approve`*, `PATCH /api/leaves/:id/reject`* |
+| Leaves | `GET /api/leaves` (filters: `userId,type,status`), `GET /api/leaves/:id`, `POST /api/leaves`, `PATCH /api/leaves/:id/approve`*, `PATCH /api/leaves/:id/reject`*, `DELETE /api/leaves/:id` (owner while pending, or manager/admin) |
 | Dashboard | `GET /api/dashboard/summary`, `GET /api/dashboard/activity?limit=` |
 
 `*` = MANAGER or ADMIN only · `†` = ADMIN only.

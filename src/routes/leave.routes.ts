@@ -28,4 +28,8 @@ router.patch(
   asyncHandler(ctrl.rejectLeave)
 );
 
+// Withdraw/cancel — authorization (owner-while-pending or manager) is enforced
+// in the controller, so no role middleware here.
+router.delete("/:id", validate({ params: idParam }), asyncHandler(ctrl.deleteLeave));
+
 export default router;
