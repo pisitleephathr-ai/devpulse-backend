@@ -22,8 +22,20 @@ async function main() {
   for (const r of DEFAULT_ROLES) {
     const role = await prisma.role.upsert({
       where: { code: r.code },
-      update: { name: r.name, description: r.description, isSystem: true },
-      create: { code: r.code, name: r.name, description: r.description, isSystem: true, isActive: true },
+      update: {
+        name: r.name,
+        description: r.description,
+        isSystem: true,
+        permissions: [...r.permissions],
+      },
+      create: {
+        code: r.code,
+        name: r.name,
+        description: r.description,
+        isSystem: true,
+        isActive: true,
+        permissions: [...r.permissions],
+      },
     });
     roleByCode[r.code] = role.id;
   }

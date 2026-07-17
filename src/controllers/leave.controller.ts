@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
 import { notify, notifyMany } from "../lib/notify";
+import { isFullAdmin, isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
 
 /** Ids of active managers/admins (recipients of leave-request notifications). */
@@ -53,7 +54,7 @@ function daysLabel(days: number, half?: string | null) {
 
 export async function listLeaves(req: Request, res: Response) {
   const q = req.query as unknown as LeaveQuery;
-  const isManager = req.user!.role === "MANAGER" || req.user!.role === "ADMIN";
+  const isManager = isTeamManager(req);
   const where: Prisma.LeaveRequestWhereInput = {
     // Non-managers only see their own requests; managers/admins see all.
     userId: isManager ? q.userId : req.user!.id,
@@ -75,7 +76,7 @@ export async function getLeave(req: Request, res: Response) {
   });
   if (!leave) throw new AppError(404, "ไม่พบคำขอลา");
   // Non-managers may only view their own leave request.
-  const isManager = req.user!.role === "MANAGER" || req.user!.role === "ADMIN";
+  const isManager = isTeamManager(req);
   if (!isManager && leave.userId !== req.user!.id) {
     throw new AppError(403, "ไม่มีสิทธิ์ดูคำขอลานี้");
   }
@@ -86,10 +87,7 @@ export async function createLeave(req: Request, res: Response) {
   const data = req.body as CreateLeaveInput;
 
   const userId =
-    data.userId &&
-    (req.user!.role === "MANAGER" || req.user!.role === "ADMIN")
-      ? data.userId
-      : req.user!.id;
+    data.userId && isTeamManager(req) ? data.userId : req.user!.id;
 
   const leave = await prisma.leaveRequest.create({
     data: {
@@ -137,7 +135,7 @@ async function decide(req: Request, res: Response, status: LeaveStatus) {
     throw new AppError(409, "คำขอนี้ถูกดำเนินการไปแล้ว");
   }
   // A user may not approve/reject their own leave (admins may override).
-  if (existing.userId === req.user!.id && req.user!.role !== "ADMIN") {
+  if (existing.userId === req.user!.id && !isFullAdmin(req)) {
     throw new AppError(403, "ไม่สามารถอนุมัติ/ปฏิเสธคำขอลาของตนเองได้");
   }
 
@@ -190,7 +188,7 @@ export async function deleteLeave(req: Request, res: Response) {
   });
   if (!existing) throw new AppError(404, "ไม่พบคำขอลา");
 
-  const isManager = req.user!.role === "MANAGER" || req.user!.role === "ADMIN";
+  const isManager = isTeamManager(req);
   const isOwner = existing.userId === req.user!.id;
   if (!isManager && !(isOwner && existing.status === "PENDING")) {
     throw new AppError(403, "ยกเลิกได้เฉพาะคำขอลาของตนเองที่ยังรออนุมัติ");

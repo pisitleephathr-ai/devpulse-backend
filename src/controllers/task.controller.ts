@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
 import { notifyMany } from "../lib/notify";
+import { isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
 import type {
   AttachmentInput,
@@ -150,7 +151,7 @@ export async function createTask(req: Request, res: Response) {
 
 /** Managers/admins may edit any task; others only tasks they are assigned to. */
 async function assertCanEdit(req: Request, taskId: string) {
-  if (req.user!.role === "MANAGER" || req.user!.role === "ADMIN") return;
+  if (isTeamManager(req)) return;
   const existing = await prisma.task.findUnique({
     where: { id: taskId },
     select: { assigneeId: true, assignees: { select: { userId: true } } },

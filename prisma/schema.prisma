@@ -95,6 +95,10 @@ model Role {
   /// system roles cannot be deleted
   isSystem    Boolean  @default(false)
   isActive    Boolean  @default(true)
+  /// capability grants, e.g. ["TEAM_MANAGE","ADMIN_FULL"]. Additive: the legacy
+  /// ADMIN/MANAGER codes still grant access on their own; permissions let
+  /// custom roles gain the same capabilities.
+  permissions String[] @default([])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

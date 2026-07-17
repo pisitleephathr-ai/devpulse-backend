@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
+import { isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
 import type {
   CreateReportInput,
@@ -59,13 +60,9 @@ function summarize(did: string) {
   return s.length > 80 ? s.slice(0, 79) + "…" : s;
 }
 
-/** True when the acting user owns the record or is a manager/admin. */
+/** True when the acting user owns the record or can manage the team. */
 function canManage(req: Request, ownerId: string) {
-  return (
-    req.user!.id === ownerId ||
-    req.user!.role === "MANAGER" ||
-    req.user!.role === "ADMIN"
-  );
+  return req.user!.id === ownerId || isTeamManager(req);
 }
 
 export async function listReports(req: Request, res: Response) {
@@ -98,10 +95,7 @@ export async function createReport(req: Request, res: Response) {
 
   // Only managers/admins may set a different author.
   const authorId =
-    data.authorId &&
-    (req.user!.role === "MANAGER" || req.user!.role === "ADMIN")
-      ? data.authorId
-      : req.user!.id;
+    data.authorId && isTeamManager(req) ? data.authorId : req.user!.id;
 
   const relatedTaskIds = await resolveRelatedTaskIds(data.relatedTaskIds);
 

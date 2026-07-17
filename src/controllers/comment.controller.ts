@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
+import { isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
 import type {
   CreateCommentInput,
@@ -20,7 +21,7 @@ async function ensureTask(taskId: string) {
 }
 
 function isManager(req: Request) {
-  return req.user!.role === "MANAGER" || req.user!.role === "ADMIN";
+  return isTeamManager(req);
 }
 
 /** List non-deleted comments on a task (any authenticated user may view). */

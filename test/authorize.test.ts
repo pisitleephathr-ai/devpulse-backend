@@ -55,6 +55,30 @@ test("authorize() honors arbitrary role codes", () => {
   assert.ok(invoke(onlyDesigner, "ADMIN") instanceof AppError);
 });
 
+function invokeWithPerms(
+  mw: (req: any, res: any, next: any) => void,
+  role: string,
+  permissions: string[]
+): unknown {
+  const req: any = { user: { id: "u1", role, permissions } };
+  let passed: unknown = "NO_CALL";
+  mw(req, {} as Response, (e?: unknown) => {
+    passed = e;
+  });
+  return passed;
+}
+
+test("capability permissions satisfy the ADMIN/MANAGER tiers for custom roles", () => {
+  // A custom role with TEAM_MANAGE passes the manager tier but not admin.
+  assert.equal(invokeWithPerms(isManagerOrAdmin, "TEAMLEAD", ["TEAM_MANAGE"]), undefined);
+  assert.ok(invokeWithPerms(isAdmin, "TEAMLEAD", ["TEAM_MANAGE"]) instanceof AppError);
+  // A custom role with ADMIN_FULL passes both.
+  assert.equal(invokeWithPerms(isAdmin, "SUPERUSER", ["ADMIN_FULL"]), undefined);
+  assert.equal(invokeWithPerms(isManagerOrAdmin, "SUPERUSER", ["ADMIN_FULL"]), undefined);
+  // No permissions, non-privileged code → still blocked.
+  assert.ok(invokeWithPerms(isManagerOrAdmin, "DEVELOPER", []) instanceof AppError);
+});
+
 test("isManagerRole is true only for MANAGER/ADMIN", () => {
   assert.equal(isManagerRole("MANAGER"), true);
   assert.equal(isManagerRole("ADMIN"), true);
