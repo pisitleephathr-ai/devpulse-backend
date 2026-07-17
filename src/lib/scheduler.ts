@@ -77,10 +77,10 @@ async function sendLeaveSummary(today: string): Promise<void> {
   await pushFlexToLineGroup(card.altText, card.contents);
 }
 
-/** Build + push the daily-report submission summary (skips when no one is required). */
+/** Build + push the daily-report submission summary (skips when no one is expected). */
 async function sendReportSummary(today: string): Promise<void> {
   const { gte, lt } = dayRange(today);
-  const [required, reports] = await Promise.all([
+  const [required, reports, leaves] = await Promise.all([
     prisma.user.findMany({
       where: { active: true, requiresDailyReport: true },
       select: { id: true, name: true },
@@ -90,21 +90,38 @@ async function sendReportSummary(today: string): Promise<void> {
       where: { date: { gte, lt } },
       select: { authorId: true },
     }),
+    // People on approved leave covering today aren't expected to report.
+    prisma.leaveRequest.findMany({
+      where: { status: "APPROVED", startDate: { lt }, endDate: { gte } },
+      select: { userId: true },
+    }),
   ]);
-  if (!required.length) return;
+  const onLeave = new Set(leaves.map((l) => l.userId));
+  const expected = required.filter((u) => !onLeave.has(u.id));
+  if (!expected.length) return; // nobody expected today (all on leave / none required)
   const submitted = new Set(reports.map((r) => r.authorId));
-  const missing = required.filter((u) => !submitted.has(u.id));
+  const missing = expected.filter((u) => !submitted.has(u.id));
   const base = appBaseUrl();
   const card = reportSummaryFlex(
     gte,
     {
-      submitted: required.length - missing.length,
-      total: required.length,
+      submitted: expected.length - missing.length,
+      total: expected.length,
       missingNames: missing.map((u) => u.name),
     },
     base ? `${base}/standup` : undefined
   );
   await pushFlexToLineGroup(card.altText, card.contents);
+}
+
+/** Whether today (Bangkok) is an active company holiday. */
+async function isCompanyHoliday(today: string): Promise<boolean> {
+  const { gte, lt } = dayRange(today);
+  const h = await prisma.companyHoliday.findFirst({
+    where: { isActive: true, date: { gte, lt } },
+    select: { id: true },
+  });
+  return !!h;
 }
 
 /**
@@ -121,13 +138,22 @@ async function tick(): Promise<void> {
   const workingDays = new Set(
     setting.workingDays.split(",").filter(Boolean).map(Number)
   );
-  if (!workingDays.has(bangkokWeekday())) return; // skip weekends/holidays
+  if (!workingDays.has(bangkokWeekday())) return; // skip non-working days
 
-  if (
+  const leaveDue =
     setting.lineDailyLeaveSummary &&
     setting.lineLeaveSummaryLastRun !== today &&
-    now >= hm(setting.lineDailyLeaveSummaryTime, "09:00")
-  ) {
+    now >= hm(setting.lineDailyLeaveSummaryTime, "09:00");
+  const reportDue =
+    setting.lineDailyReportSummary &&
+    setting.lineReportSummaryLastRun !== today &&
+    now >= hm(setting.lineDailyReportSummaryTime, "18:00");
+  if (!leaveDue && !reportDue) return;
+
+  // A company holiday is a day off — send neither summary.
+  if (await isCompanyHoliday(today)) return;
+
+  if (leaveDue) {
     await prisma.teamSetting.update({
       where: { id: setting.id },
       data: { lineLeaveSummaryLastRun: today },
@@ -137,11 +163,7 @@ async function tick(): Promise<void> {
     );
   }
 
-  if (
-    setting.lineDailyReportSummary &&
-    setting.lineReportSummaryLastRun !== today &&
-    now >= hm(setting.lineDailyReportSummaryTime, "18:00")
-  ) {
+  if (reportDue) {
     await prisma.teamSetting.update({
       where: { id: setting.id },
       data: { lineReportSummaryLastRun: today },
