@@ -413,5 +413,8 @@ model TeamSetting {
   /// JSON array of sidebar menu customization: [{key, customLabel, order, isVisible}].
   /// Empty = code defaults. Controls display only — never grants page access.
   menuConfig                String  @default("")
+  /// LINE group id the OA bot is in, auto-captured from webhook events. Task
+  /// notifications are pushed here when LINE is enabled. Null = not linked yet.
+  lineGroupId               String?
   updatedAt          DateTime @updatedAt
 }

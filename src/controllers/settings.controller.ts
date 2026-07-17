@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
+import { env } from "../lib/env";
 import type {
   CreateHolidayInput,
   CreateLeaveTypeInput,
@@ -25,7 +26,12 @@ export async function getSettings(_req: Request, res: Response) {
   if (!setting) {
     setting = await prisma.teamSetting.create({ data: DEFAULT_SETTING });
   }
-  res.json({ setting });
+  // Surface LINE integration status so the settings UI can show connection state
+  // (without exposing secrets — only whether it's enabled and a group is linked).
+  res.json({
+    setting,
+    line: { enabled: env.LINE_ENABLED, groupConnected: !!setting.lineGroupId },
+  });
 }
 
 export async function updateSettings(req: Request, res: Response) {
