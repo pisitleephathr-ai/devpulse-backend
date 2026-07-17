@@ -124,7 +124,8 @@ export async function createReport(req: Request, res: Response) {
 
   const relatedTaskIds = await resolveRelatedTaskIds(data.relatedTaskIds);
 
-  const report = await prisma.dailyReport.create({
+  const report = await prisma.$transaction(async (tx) => {
+    const created = await tx.dailyReport.create({
     data: {
       authorId,
       projectId: data.projectId,
@@ -144,17 +145,22 @@ export async function createReport(req: Request, res: Response) {
         : undefined,
     },
     include,
-  });
-
-  await logActivity({
-    userId: req.user!.id,
-    action: "report.create",
-    message:
-      report.status === "DRAFT"
-        ? `บันทึกฉบับร่างรายงานของ ${report.author.name}`
-        : `${report.author.name} ส่งรายงานประจำวันแล้ว`,
-    entityType: "report",
-    entityId: report.id,
+    });
+    // Audit log shares the report's transaction (both commit or neither).
+    await logActivity(
+      {
+        userId: req.user!.id,
+        action: "report.create",
+        message:
+          created.status === "DRAFT"
+            ? `บันทึกฉบับร่างรายงานของ ${created.author.name}`
+            : `${created.author.name} ส่งรายงานประจำวันแล้ว`,
+        entityType: "report",
+        entityId: created.id,
+      },
+      tx
+    );
+    return created;
   });
 
   res.status(201).json({ report: serialize(report) });
