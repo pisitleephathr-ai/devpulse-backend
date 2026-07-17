@@ -4,8 +4,43 @@ import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
 import { notify, notifyMany } from "../lib/notify";
+import { pushFlexToLineGroup, appBaseUrl, getLinePrefs } from "../lib/line";
+import { leaveFlex } from "../lib/line-messages";
 import { isFullAdmin, isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
+
+/** Best-effort LINE card for a leave submit/decision (never throws). */
+async function pushLeaveCard(
+  status: "PENDING" | "APPROVED" | "REJECTED",
+  leave: {
+    user: { name: string };
+    type: string;
+    startDate: Date;
+    endDate: Date;
+    days: number;
+    halfDayPeriod: string | null;
+    reason: string | null;
+    reviewedBy?: { name: string } | null;
+  }
+) {
+  if (!(await getLinePrefs()).notifyLeave) return;
+  const base = appBaseUrl();
+  const card = leaveFlex(
+    status,
+    {
+      userName: leave.user.name,
+      type: leave.type,
+      startDate: leave.startDate,
+      endDate: leave.endDate,
+      days: leave.days,
+      halfDayPeriod: leave.halfDayPeriod,
+      reason: leave.reason,
+      actorName: leave.reviewedBy?.name ?? null,
+    },
+    base ? `${base}/leaves` : undefined
+  );
+  await pushFlexToLineGroup(card.altText, card.contents);
+}
 
 /** Ids of active managers/admins (recipients of leave-request notifications). */
 async function managerIds(): Promise<string[]> {
@@ -121,6 +156,8 @@ export async function createLeave(req: Request, res: Response) {
     entityId: leave.id,
   });
 
+  await pushLeaveCard("PENDING", leave);
+
   res.status(201).json({ leave });
 }
 
@@ -165,6 +202,8 @@ async function decide(req: Request, res: Response, status: LeaveStatus) {
       entityId: leave.id,
     });
   }
+
+  await pushLeaveCard(status === "APPROVED" ? "APPROVED" : "REJECTED", leave);
 
   res.json({ leave });
 }
