@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
 import { notifyMany } from "../lib/notify";
+import { pushToLineGroup } from "../lib/line";
 import { isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
 import type {
@@ -161,6 +162,12 @@ export async function createTask(req: Request, res: Response) {
     }
   );
 
+  // Announce the new task to the team's LINE group (once per task).
+  const names = task.assignees.map((a) => a.user.name).join(", ") || "ยังไม่มอบหมาย";
+  await pushToLineGroup(
+    `📋 งานใหม่ [${task.project.code}]\n"${task.title}"\nผู้รับผิดชอบ: ${names}`
+  );
+
   res.status(201).json({ task: flatten(task) });
 }
 
@@ -286,6 +293,11 @@ export async function updateTaskStatus(req: Request, res: Response) {
       entityType: "task",
       entityId: task.id,
     }
+  );
+
+  // Announce the status change to the team's LINE group.
+  await pushToLineGroup(
+    `🔄 [${task.project.code}] "${task.title}"\n→ ${STATUS_LABEL[status]}`
   );
 
   res.json({ task: flatten(task) });
