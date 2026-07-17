@@ -13,6 +13,11 @@ export const updateSettingsSchema = z
     notifyReportReminder: z.boolean(),
     notifyLeaveApproval: z.boolean(),
     notifyTaskDue: z.boolean(),
+    // LINE OA notification prefs
+    lineNotifyNewTask: z.boolean(),
+    lineNotifyStatuses: z.array(
+      z.enum(["TODO", "IN_PROGRESS", "REVIEW", "READY_TO_TEST", "DONE"])
+    ),
     // comma-separated menu ids
     menuOrder: z.string(),
   })

@@ -189,12 +189,12 @@ export function taskStatusFlex(
     [
       titleLine(t.title),
       row("โปรเจกต์", `${t.projectName} (${t.projectCode})`),
-      // Outer box must be "horizontal" (not "baseline") because it holds a
-      // nested box — a baseline box may only contain text/icon/filler, and
-      // nesting a box in it makes LINE reject the whole message with HTTP 400.
-      { type: "box", layout: "horizontal", spacing: "sm", contents: [
-        { type: "text", text: "สถานะ", color: MUTED, size: "sm", flex: 4, gravity: "center" },
-        { type: "box", layout: "baseline", flex: 6, contents: transition },
+      // Status gets its own full-width block (label on top, transition below)
+      // so a long "จากเดิม → ใหม่" isn't clipped by sharing a row with the label.
+      // The inner box stays "baseline" and holds only text — valid for LINE.
+      { type: "box", layout: "vertical", spacing: "xs", contents: [
+        { type: "text", text: "สถานะ", color: MUTED, size: "sm" },
+        { type: "box", layout: "baseline", spacing: "sm", contents: transition },
       ] },
       { type: "separator", margin: "md", color: HAIRLINE },
       actorLine(`โดย ${t.actorName}`),
