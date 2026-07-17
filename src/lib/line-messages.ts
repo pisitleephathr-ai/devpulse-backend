@@ -52,6 +52,66 @@ function row(label: string, value: string, valueColor = INK): LineMessage {
   };
 }
 
+/**
+ * Shared bubble shell so both card types look identical: a teal header with an
+ * icon+label, a body, and an optional "open task" footer button. Keeping one
+ * shell is what makes the New-task and Status cards a matched set.
+ */
+function shell(
+  headerLabel: string,
+  bodyContents: LineMessage[],
+  url?: string
+): LineMessage {
+  const bubble: LineMessage = {
+    type: "bubble",
+    size: "mega",
+    header: {
+      type: "box",
+      layout: "vertical",
+      backgroundColor: TEAL,
+      paddingAll: "16px",
+      contents: [
+        { type: "text", text: headerLabel, color: "#ffffff", size: "sm", weight: "bold" },
+      ],
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      paddingAll: "16px",
+      contents: bodyContents,
+    },
+  };
+  if (url) {
+    bubble.footer = {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "12px",
+      paddingTop: "none",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          color: TEAL,
+          height: "sm",
+          action: { type: "uri", label: "เปิดดูงาน ↗", uri: url },
+        },
+      ],
+    };
+  }
+  return bubble;
+}
+
+/** Big bold task title used as the first body line on every card. */
+function titleLine(title: string): LineMessage {
+  return { type: "text", text: title, color: INK, size: "xl", weight: "bold", wrap: true };
+}
+
+/** Muted "by <name>" footer line inside the body. */
+function actorLine(text: string): LineMessage {
+  return { type: "text", text, color: MUTED, size: "xs", margin: "md" };
+}
+
 type TaskCardInput = {
   title: string;
   projectName: string;
@@ -64,126 +124,77 @@ type TaskCardInput = {
 };
 
 /** Flex card announcing a newly created task. */
-export function taskCreatedFlex(t: TaskCardInput): {
-  altText: string;
-  contents: LineMessage;
-} {
+export function taskCreatedFlex(
+  t: TaskCardInput,
+  url?: string
+): { altText: string; contents: LineMessage } {
   const pri = PRIORITY[t.priority];
   const st = STATUS[t.status];
-  const contents: LineMessage = {
-    type: "bubble",
-    size: "mega",
-    header: {
-      type: "box",
-      layout: "vertical",
-      backgroundColor: TEAL,
-      paddingAll: "16px",
-      contents: [
-        { type: "text", text: "📋 งานใหม่", color: "#d1fae5", size: "sm", weight: "bold" },
-        {
-          type: "text",
-          text: t.title,
-          color: "#ffffff",
-          size: "xl",
-          weight: "bold",
-          wrap: true,
-          margin: "sm",
-        },
-      ],
-    },
-    body: {
-      type: "box",
-      layout: "vertical",
-      spacing: "md",
-      paddingAll: "16px",
-      contents: [
-        row("โปรเจกต์", `${t.projectName} (${t.projectCode})`),
-        row("ผู้รับผิดชอบ", t.assignees.length ? t.assignees.join(", ") : "ยังไม่มอบหมาย"),
-        row("ความสำคัญ", pri.label, pri.color),
-        row("กำหนดส่ง", thaiDate(t.dueDate)),
-        row("สถานะ", st.label, st.color),
-        { type: "separator", margin: "md", color: HAIRLINE },
-        {
-          type: "text",
-          text: `สร้างโดย ${t.actorName}`,
-          color: MUTED,
-          size: "xs",
-          margin: "md",
-        },
-      ],
-    },
-  };
+  const contents = shell(
+    "📋 งานใหม่",
+    [
+      titleLine(t.title),
+      row("โปรเจกต์", `${t.projectName} (${t.projectCode})`),
+      row("ผู้รับผิดชอบ", t.assignees.length ? t.assignees.join(", ") : "ยังไม่มอบหมาย"),
+      row("ความสำคัญ", pri.label, pri.color),
+      row("กำหนดส่ง", thaiDate(t.dueDate)),
+      row("สถานะ", st.label, st.color),
+      { type: "separator", margin: "md", color: HAIRLINE },
+      actorLine(`สร้างโดย ${t.actorName}`),
+    ],
+    url
+  );
   return { altText: `📋 งานใหม่: ${t.title}`, contents };
 }
 
 type StatusCardInput = {
   title: string;
+  projectName: string;
   projectCode: string;
   fromStatus: TaskStatus | null;
   toStatus: TaskStatus;
   actorName: string;
 };
 
-/** Flex card announcing a task status change. */
-export function taskStatusFlex(t: StatusCardInput): {
-  altText: string;
-  contents: LineMessage;
-} {
+/** Flex card announcing a task status change (same shell as the New-task card). */
+export function taskStatusFlex(
+  t: StatusCardInput,
+  url?: string
+): { altText: string; contents: LineMessage } {
   const to = STATUS[t.toStatus];
   const from = t.fromStatus ? STATUS[t.fromStatus] : null;
+
   const transition: LineMessage[] = [];
   if (from) {
     transition.push(
       { type: "text", text: from.label, color: from.color, size: "sm", weight: "bold", flex: 0 },
-      { type: "text", text: "→", color: MUTED, size: "sm", flex: 0, margin: "md" }
+      { type: "text", text: "→", color: MUTED, size: "sm", flex: 0, margin: "md" },
+      { type: "text", text: to.label, color: to.color, size: "sm", weight: "bold", flex: 0, margin: "md" }
     );
+  } else {
+    transition.push({
+      type: "text",
+      text: to.label,
+      color: to.color,
+      size: "sm",
+      weight: "bold",
+      flex: 0,
+    });
   }
-  transition.push({
-    type: "text",
-    text: to.label,
-    color: to.color,
-    size: "sm",
-    weight: "bold",
-    flex: 0,
-    margin: from ? "md" : "none",
-  });
 
-  const contents: LineMessage = {
-    type: "bubble",
-    size: "kilo",
-    header: {
-      type: "box",
-      layout: "vertical",
-      backgroundColor: to.color,
-      paddingAll: "14px",
-      contents: [
-        { type: "text", text: "🔄 อัปเดตสถานะงาน", color: "#ffffff", size: "sm", weight: "bold" },
-      ],
-    },
-    body: {
-      type: "box",
-      layout: "vertical",
-      spacing: "sm",
-      paddingAll: "16px",
-      contents: [
-        { type: "text", text: t.title, color: INK, size: "md", weight: "bold", wrap: true },
-        { type: "text", text: `โปรเจกต์ ${t.projectCode}`, color: MUTED, size: "xs" },
-        {
-          type: "box",
-          layout: "baseline",
-          margin: "md",
-          contents: transition,
-        },
-        { type: "separator", margin: "md", color: HAIRLINE },
-        {
-          type: "text",
-          text: `โดย ${t.actorName}`,
-          color: MUTED,
-          size: "xs",
-          margin: "md",
-        },
-      ],
-    },
-  };
+  const contents = shell(
+    "🔄 อัปเดตสถานะงาน",
+    [
+      titleLine(t.title),
+      row("โปรเจกต์", `${t.projectName} (${t.projectCode})`),
+      { type: "box", layout: "baseline", spacing: "sm", contents: [
+        { type: "text", text: "สถานะ", color: MUTED, size: "sm", flex: 2 },
+        { type: "box", layout: "baseline", flex: 5, contents: transition },
+      ] },
+      { type: "separator", margin: "md", color: HAIRLINE },
+      actorLine(`โดย ${t.actorName}`),
+    ],
+    url
+  );
   return { altText: `🔄 ${t.title} → ${to.label}`, contents };
 }

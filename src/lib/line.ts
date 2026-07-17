@@ -15,6 +15,59 @@ async function resolveGroupId(): Promise<string | undefined> {
   }
 }
 
+const QUOTA_URL = "https://api.line.me/v2/bot/message/quota";
+const CONSUMPTION_URL = "https://api.line.me/v2/bot/message/quota/consumption";
+
+/** Public frontend base URL (no trailing slash) for "open task" links, or null. */
+export function appBaseUrl(): string | null {
+  const raw = (
+    env.APP_URL || (env.CORS_ORIGIN !== "*" ? env.CORS_ORIGIN.split(",")[0] : "")
+  )
+    .trim()
+    .replace(/\/+$/, "");
+  return /^https?:\/\//.test(raw) ? raw : null;
+}
+
+export type LineQuota = {
+  /** "limited" = a monthly free/paid cap; "none" = unlimited (higher plan). */
+  type: "limited" | "none";
+  /** monthly cap (null when unlimited) */
+  value: number | null;
+  /** messages already sent this month toward the cap */
+  used: number;
+  /** value - used (null when unlimited) */
+  remaining: number | null;
+};
+
+/**
+ * Fetch this month's LINE message quota + consumption. Best-effort: returns
+ * null when LINE is unconfigured or the API call fails. Quota checks do NOT
+ * themselves count against the message quota.
+ */
+export async function getLineQuota(): Promise<LineQuota | null> {
+  if (!env.LINE_ENABLED || !env.LINE_CHANNEL_ACCESS_TOKEN) return null;
+  const headers = { Authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}` };
+  try {
+    const [qRes, cRes] = await Promise.all([
+      fetch(QUOTA_URL, { headers, signal: AbortSignal.timeout(4000) }),
+      fetch(CONSUMPTION_URL, { headers, signal: AbortSignal.timeout(4000) }),
+    ]);
+    if (!qRes.ok || !cRes.ok) return null;
+    const q = (await qRes.json()) as { type?: "limited" | "none"; value?: number };
+    const c = (await cRes.json()) as { totalUsage?: number };
+    const used = c.totalUsage ?? 0;
+    const value = q.type === "limited" ? q.value ?? null : null;
+    return {
+      type: q.type ?? "none",
+      value,
+      used,
+      remaining: value !== null ? Math.max(0, value - used) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** A LINE message object (text or flex). Kept loose — shapes are built by callers. */
 export type LineMessage = Record<string, unknown>;
 
