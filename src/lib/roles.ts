@@ -1,19 +1,76 @@
 import type { Prisma } from "@prisma/client";
 
 /**
- * Capability grants a role can hold. Coarse, matching the app's two-tier model:
- * - TEAM_MANAGE: manager-level (projects, leave review, edit any report/task,
- *   team-wide visibility).
- * - ADMIN_FULL: admin-level (users, roles, settings, destructive actions).
- * ADMIN_FULL implies TEAM_MANAGE (see lib/authz).
+ * Capability grants a role can hold. Two coarse tiers plus fine-grained
+ * capabilities that they imply:
+ * - ADMIN_FULL: everything (users, roles, settings, destructive actions).
+ * - TEAM_MANAGE: manager tier (projects, leave review, edit any report/task,
+ *   team-wide visibility) — implies the manager-level fine-grained set.
+ * A custom role may instead be granted individual fine-grained capabilities.
+ * All expansion happens in `expandPermissions` so checks stay consistent.
  */
 export const PERMISSIONS = {
-  TEAM_MANAGE: "TEAM_MANAGE",
   ADMIN_FULL: "ADMIN_FULL",
+  TEAM_MANAGE: "TEAM_MANAGE",
+  USER_MANAGE: "USER_MANAGE",
+  ROLE_MANAGE: "ROLE_MANAGE",
+  PROJECT_MANAGE: "PROJECT_MANAGE",
+  LEAVE_APPROVE: "LEAVE_APPROVE",
+  ACTIVITY_VIEW: "ACTIVITY_VIEW",
+  SETTINGS_MANAGE: "SETTINGS_MANAGE",
+  TASK_CREATE: "TASK_CREATE",
+  TASK_DELETE: "TASK_DELETE",
+  TASK_EDIT_ANY: "TASK_EDIT_ANY",
+  REPORT_EDIT_ANY: "REPORT_EDIT_ANY",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 export const ALL_PERMISSIONS: Permission[] = Object.values(PERMISSIONS);
+
+/** Fine-grained capabilities the manager tier (TEAM_MANAGE) implies. */
+const TEAM_MANAGE_IMPLIES: Permission[] = [
+  PERMISSIONS.PROJECT_MANAGE,
+  PERMISSIONS.LEAVE_APPROVE,
+  PERMISSIONS.ACTIVITY_VIEW,
+  PERMISSIONS.SETTINGS_MANAGE,
+  PERMISSIONS.TASK_CREATE,
+  PERMISSIONS.TASK_DELETE,
+  PERMISSIONS.TASK_EDIT_ANY,
+  PERMISSIONS.REPORT_EDIT_ANY,
+];
+
+/**
+ * Expand a role's raw permission grants (and optional legacy role code) into the
+ * full effective capability set, applying tier implications:
+ *  - legacy ADMIN code  → ADMIN_FULL
+ *  - legacy MANAGER code → TEAM_MANAGE
+ *  - ADMIN_FULL          → every capability
+ *  - TEAM_MANAGE         → the manager-level fine-grained set
+ * Backward-compatible and additive — no existing role loses access.
+ */
+export function expandPermissions(
+  perms: readonly string[] | null | undefined,
+  roleCode?: string | null
+): Set<string> {
+  const set = new Set<string>(perms ?? []);
+  if (roleCode === "ADMIN") set.add(PERMISSIONS.ADMIN_FULL);
+  if (roleCode === "MANAGER") set.add(PERMISSIONS.TEAM_MANAGE);
+  if (set.has(PERMISSIONS.ADMIN_FULL)) {
+    for (const p of ALL_PERMISSIONS) set.add(p);
+  }
+  if (set.has(PERMISSIONS.TEAM_MANAGE)) {
+    for (const p of TEAM_MANAGE_IMPLIES) set.add(p);
+  }
+  return set;
+}
+
+/** Whether a role (by its grants + optional code) is a full admin. */
+export function roleIsAdmin(
+  perms: readonly string[] | null | undefined,
+  roleCode?: string | null
+): boolean {
+  return expandPermissions(perms, roleCode).has(PERMISSIONS.ADMIN_FULL);
+}
 
 /**
  * Default system roles seeded into the Role table (with their capabilities).

@@ -42,12 +42,28 @@ async function pushLeaveCard(
   await pushFlexToLineGroup(card.altText, card.contents);
 }
 
-/** Ids of active managers/admins (recipients of leave-request notifications). */
+/**
+ * Ids of active users who can approve leave — recipients of leave-request
+ * notifications. Permission-aware: the legacy MANAGER/ADMIN codes OR any role
+ * granted TEAM_MANAGE / ADMIN_FULL / LEAVE_APPROVE (so custom roles are
+ * notified too, not just the built-in codes).
+ */
 async function managerIds(): Promise<string[]> {
   const managers = await prisma.user.findMany({
     where: {
       active: true,
-      roleRef: { code: { in: ["MANAGER", "ADMIN"] } },
+      roleRef: {
+        is: {
+          OR: [
+            { code: { in: ["MANAGER", "ADMIN"] } },
+            {
+              permissions: {
+                hasSome: ["TEAM_MANAGE", "ADMIN_FULL", "LEAVE_APPROVE"],
+              },
+            },
+          ],
+        },
+      },
     },
     select: { id: true },
   });

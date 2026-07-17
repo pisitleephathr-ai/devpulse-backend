@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { hashPassword } from "../lib/password";
 import { userPublicSelect, serializeUser } from "../lib/selects";
 import { logActivity } from "../lib/activity";
+import { roleIsAdmin } from "../lib/roles";
 import { AppError } from "../middleware/error";
 import type { CreateUserInput, UpdateUserInput } from "../schemas/user.schema";
 
@@ -33,9 +34,10 @@ async function assertNotLastAdmin(userId: string) {
     where: { id: userId },
     select: { active: true, roleRef: { select: { code: true, permissions: true } } },
   });
-  const targetIsAdmin =
-    target?.roleRef?.code === "ADMIN" ||
-    (target?.roleRef?.permissions?.includes("ADMIN_FULL") ?? false);
+  const targetIsAdmin = roleIsAdmin(
+    target?.roleRef?.permissions,
+    target?.roleRef?.code
+  );
   if (!target || !target.active || !targetIsAdmin) return;
   // Count active users with admin access (ADMIN code OR the ADMIN_FULL grant).
   const activeAdmins = await prisma.user.count({
