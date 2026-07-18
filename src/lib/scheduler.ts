@@ -126,7 +126,7 @@ async function sendReportSummary(today: string): Promise<SendResult> {
   const card = reportSummaryFlex(
     gte,
     { total: expected.length, submitted, missingNames },
-    base ? `${base}/standup` : undefined
+    base ? `${base}/reports` : undefined
   );
   await pushFlexToLineGroup(card.altText, card.contents);
   return { pushed: true };
