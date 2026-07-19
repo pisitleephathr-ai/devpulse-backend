@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { env } from "../lib/env";
 import { runScheduledSummaries } from "../lib/scheduler";
 import { runAttachmentCleanup } from "../lib/attachment-cleanup";
+import { publishRichMenu } from "../lib/line-richmenu";
 
 /** Pull the caller's secret from a Bearer token, header, or query param. */
 function providedSecret(req: Request): string | undefined {
@@ -49,4 +50,23 @@ export async function cronAttachmentCleanup(req: Request, res: Response) {
   }
   const summary = await runAttachmentCleanup();
   res.json({ ok: true, summary });
+}
+
+/**
+ * Server-side trigger to (re)publish the LINE rich menu. Runs inside the
+ * deployed environment so it can reach api-data.line.me (the image-upload host
+ * that may be blocked from a developer's machine). Gated by CRON_SECRET; call
+ * once after deploy. Auto-generates the menu image via Cloudinary.
+ */
+export async function cronSetupRichMenu(req: Request, res: Response) {
+  if (!env.CRON_SECRET) {
+    res.status(503).json({ ok: false, error: "CRON_SECRET not configured" });
+    return;
+  }
+  if (providedSecret(req) !== env.CRON_SECRET) {
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return;
+  }
+  const result = await publishRichMenu();
+  res.json({ ok: true, ...result });
 }
