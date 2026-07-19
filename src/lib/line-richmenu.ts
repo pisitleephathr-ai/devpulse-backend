@@ -117,12 +117,12 @@ function esc(s: string): string {
 }
 
 /**
- * A polished SVG matching the 2x3 tappable grid, rasterized to PNG by Cloudinary.
- * Each cell is a rounded card with an icon chip and a label; chat cells are teal,
- * web cells are indigo, with a small tag telling the user what a tap does.
+ * A minimal, glassy SVG matching the 2x3 tappable grid, rasterized to PNG by
+ * Cloudinary. Soft teal gradient background with translucent white cards; a
+ * tinted icon chip and a small tag ("ตอบในแชท" / "เปิดหน้าเว็บ") per cell.
  */
 function buildSvg(): string {
-  const M = 46; // card margin inside each grid cell
+  const M = 54; // card margin inside each grid cell (airy spacing)
   const cards = CELLS.map((cell, i) => {
     const col = i % COLS;
     const row = Math.floor(i / COLS);
@@ -133,28 +133,26 @@ function buildSvg(): string {
     const cx = x + w / 2;
 
     const isChat = cell.kind === "chat";
-    const chipFill = isChat ? "#ccfbf1" : "#e0e7ff";
-    const barFill = isChat ? "#0d9488" : "#6366f1";
-    const tagColor = isChat ? "#0f766e" : "#4f46e5";
-    const tag = isChat ? "💬 ตอบในแชท" : "↗ เปิดหน้าเว็บ";
-    const iconCy = y + h * 0.36;
+    const chipFill = isChat ? "#cffafe" : "#dbeafe";
+    const tag = isChat ? "💬  ตอบในแชท" : "↗  เปิดหน้าเว็บ";
+    const iconCy = y + h * 0.37;
 
     return `
       <g>
-        <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="56" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
-        <rect x="${x}" y="${y}" width="${w}" height="14" rx="7" fill="${barFill}"/>
-        <circle cx="${cx}" cy="${iconCy}" r="112" fill="${chipFill}"/>
-        <text x="${cx}" y="${iconCy}" font-size="118" text-anchor="middle" dominant-baseline="central">${cell.emoji}</text>
-        <text x="${cx}" y="${y + h * 0.68}" font-size="70" font-family="sans-serif" font-weight="700" fill="#0f172a" text-anchor="middle">${esc(cell.label)}</text>
-        <text x="${cx}" y="${y + h * 0.83}" font-size="42" font-family="sans-serif" font-weight="600" fill="${tagColor}" text-anchor="middle">${esc(tag)}</text>
+        <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="80" fill="#ffffff" fill-opacity="0.82" stroke="#ffffff" stroke-opacity="0.9" stroke-width="3"/>
+        <circle cx="${cx}" cy="${iconCy}" r="118" fill="${chipFill}"/>
+        <text x="${cx}" y="${iconCy}" font-size="122" text-anchor="middle" dominant-baseline="central">${cell.emoji}</text>
+        <text x="${cx}" y="${y + h * 0.70}" font-size="72" font-family="sans-serif" font-weight="700" fill="#0f5c55" text-anchor="middle">${esc(cell.label)}</text>
+        <text x="${cx}" y="${y + h * 0.84}" font-size="42" font-family="sans-serif" font-weight="600" fill="#0d9488" text-anchor="middle">${esc(tag)}</text>
       </g>`;
   }).join("");
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${RICHMENU_WIDTH}" height="${RICHMENU_HEIGHT}" viewBox="0 0 ${RICHMENU_WIDTH} ${RICHMENU_HEIGHT}">
     <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#f8fafc"/>
-        <stop offset="1" stop-color="#eef2f6"/>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#a7f3e4"/>
+        <stop offset="0.55" stop-color="#6fd7cf" />
+        <stop offset="1" stop-color="#4fc9b4"/>
       </linearGradient>
     </defs>
     <rect width="${RICHMENU_WIDTH}" height="${RICHMENU_HEIGHT}" fill="url(#bg)"/>
