@@ -2,8 +2,9 @@ import type { Request, Response } from "express";
 import crypto from "crypto";
 import { prisma } from "../lib/prisma";
 import { env } from "../lib/env";
-import { replyTextToLine } from "../lib/line";
+import { replyTextToLine, replyToLine } from "../lib/line";
 import { linkByCode, unlinkByLineUserId } from "../lib/line-link";
+import { handleBotCommand, isBotCommand } from "../lib/line-commands";
 
 // Minimal fields required to create the singleton if it doesn't exist yet.
 const DEFAULT_SETTING = { teamName: "ทีมแพลตฟอร์ม", reportReminderTime: "16:30 น." };
@@ -52,6 +53,7 @@ async function handleUserEvent(ev: {
   type?: string;
   replyToken?: string;
   message?: { type?: string; text?: string };
+  postback?: { data?: string };
   source?: { userId?: string };
 }): Promise<void> {
   const lineUserId = ev.source?.userId;
@@ -59,6 +61,16 @@ async function handleUserEvent(ev: {
 
   if (ev.type === "unfollow") {
     await unlinkByLineUserId(lineUserId);
+    return;
+  }
+
+  // Rich-menu buttons fire a postback like "cmd=my_tasks" → reply with data.
+  if (ev.type === "postback" && ev.replyToken) {
+    const cmd = new URLSearchParams(ev.postback?.data ?? "").get("cmd") ?? "";
+    if (isBotCommand(cmd)) {
+      const messages = await handleBotCommand(cmd, lineUserId);
+      if (messages.length) await replyToLine(ev.replyToken, messages);
+    }
     return;
   }
 
@@ -117,6 +129,7 @@ export async function lineWebhook(req: Request, res: Response) {
         type?: string;
         replyToken?: string;
         message?: { type?: string; text?: string };
+        postback?: { data?: string };
         source?: { type?: string; groupId?: string; userId?: string };
       }>;
     };

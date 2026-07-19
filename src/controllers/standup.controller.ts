@@ -206,7 +206,7 @@ export async function remind(req: Request, res: Response) {
 
   // Also nudge on personal LINE (per-user pref; linked users only).
   const base = appBaseUrl();
-  await pushToUsersWithPref(missing, "lineNotifyReportReminder", [
+  await pushToUsersWithPref(missing, "reportReminder", [
     {
       type: "text",
       text:

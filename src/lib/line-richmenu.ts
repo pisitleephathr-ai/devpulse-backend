@@ -20,16 +20,22 @@ const ROWS = 2;
 const CELL_W = RICHMENU_WIDTH / COLS;
 const CELL_H = RICHMENU_HEIGHT / ROWS;
 
-type Cell = { label: string; emoji: string; path: string };
+/**
+ * A rich-menu cell. `chat` cells fire a postback command the bot answers inside
+ * the chat; `web` cells open a page in the app. Mixed by design.
+ */
+type Cell =
+  | { kind: "chat"; label: string; emoji: string; cmd: string; displayText: string }
+  | { kind: "web"; label: string; emoji: string; path: string };
 
-/** The 6 buttons, left→right, top→bottom. Paths are appended to the app base. */
+/** The 6 buttons, left→right, top→bottom. Row 1 = in-chat, row 2 = open web. */
 export const CELLS: Cell[] = [
-  { label: "บอร์ดงาน", emoji: "🗂", path: "/tasks" },
-  { label: "รายงานประจำวัน", emoji: "📝", path: "/reports" },
-  { label: "ปฏิทินทีม", emoji: "📅", path: "/calendar" },
-  { label: "คำขอลา", emoji: "🌴", path: "/leaves" },
-  { label: "แดชบอร์ด", emoji: "📊", path: "/dashboard" },
-  { label: "โปรไฟล์", emoji: "👤", path: "/profile" },
+  { kind: "chat", label: "งานของฉัน", emoji: "📋", cmd: "my_tasks", displayText: "งานของฉัน" },
+  { kind: "chat", label: "ใครลาวันนี้", emoji: "🌴", cmd: "leave_today", displayText: "ใครลาวันนี้" },
+  { kind: "chat", label: "สถานะรายงานวันนี้", emoji: "📊", cmd: "report_today", displayText: "สถานะรายงานวันนี้" },
+  { kind: "web", label: "บอร์ดงาน", emoji: "🗂", path: "/tasks" },
+  { kind: "web", label: "ปฏิทินทีม", emoji: "📅", path: "/calendar" },
+  { kind: "web", label: "ส่งรายงาน", emoji: "📝", path: "/reports" },
 ];
 
 function token(): string {
@@ -73,11 +79,20 @@ export async function clearRichMenus(): Promise<string[]> {
   return deleted;
 }
 
-/** Build the rich menu object (grid areas → URI actions into the web app). */
+/** Build the rich menu object (grid areas → chat postbacks or web URIs). */
 function buildMenu(base: string) {
   const areas = CELLS.map((cell, i) => {
     const col = i % COLS;
     const row = Math.floor(i / COLS);
+    const action =
+      cell.kind === "chat"
+        ? {
+            type: "postback",
+            label: cell.label,
+            data: `cmd=${cell.cmd}`,
+            displayText: cell.displayText,
+          }
+        : { type: "uri", label: cell.label, uri: `${base}${cell.path}` };
     return {
       bounds: {
         x: Math.round(col * CELL_W),
@@ -85,7 +100,7 @@ function buildMenu(base: string) {
         width: Math.round(CELL_W),
         height: Math.round(CELL_H),
       },
-      action: { type: "uri", label: cell.label, uri: `${base}${cell.path}` },
+      action,
     };
   });
   return {

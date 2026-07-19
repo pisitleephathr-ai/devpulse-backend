@@ -38,6 +38,9 @@ export async function createRole(req: Request, res: Response) {
       permissions: data.permissions ? [...new Set(data.permissions)] : [],
       assignable: data.assignable ?? true,
       menuAccess: data.menuAccess ? [...new Set(data.menuAccess)] : [],
+      lineNotifications: data.lineNotifications
+        ? [...new Set(data.lineNotifications)]
+        : [],
     },
   });
 
@@ -81,6 +84,9 @@ export async function updateRole(req: Request, res: Response) {
       // Menu visibility is navigation-only (not a capability) — editable for
       // every role. API routes stay guarded by permissions regardless.
       ...(data.menuAccess ? { menuAccess: [...new Set(data.menuAccess)] } : {}),
+      ...(data.lineNotifications
+        ? { lineNotifications: [...new Set(data.lineNotifications)] }
+        : {}),
       ...(data.permissions
         ? { permissions: [...new Set(data.permissions)] }
         : {}),

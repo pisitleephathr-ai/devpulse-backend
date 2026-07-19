@@ -1,9 +1,12 @@
 import { z } from "zod";
 import { ALL_PERMISSIONS } from "../lib/roles";
+import { LINE_NOTIF_KEYS } from "../lib/line-notif";
 
 // Allowlist role permissions against the canonical capability set (no arbitrary
 // strings) — single source of truth in src/lib/roles.ts.
 const permission = z.enum(ALL_PERMISSIONS as [string, ...string[]]);
+// Allowlist personal-LINE notification types (single source in line-notif.ts).
+const lineNotif = z.enum(LINE_NOTIF_KEYS as [string, ...string[]]);
 
 export const createRoleSchema = z.object({
   name: z.string().min(1),
@@ -20,6 +23,8 @@ export const createRoleSchema = z.object({
   assignable: z.boolean().optional(),
   /** sidebar menu keys this role may see ([] = inherit code defaults) */
   menuAccess: z.array(z.string().min(1).max(40)).optional(),
+  /** personal-LINE notification types this role may receive ([] = all) */
+  lineNotifications: z.array(lineNotif).optional(),
 });
 
 export const updateRoleSchema = z.object({
@@ -29,6 +34,7 @@ export const updateRoleSchema = z.object({
   permissions: z.array(permission).optional(),
   assignable: z.boolean().optional(),
   menuAccess: z.array(z.string().min(1).max(40)).optional(),
+  lineNotifications: z.array(lineNotif).optional(),
 });
 
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;

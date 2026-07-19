@@ -6,6 +6,7 @@ import { logActivity } from "../lib/activity";
 import { env } from "../lib/env";
 import { pushMessagesToUser } from "../lib/line";
 import { issueLinkCode } from "../lib/line-link";
+import { allowedNotifKeys } from "../lib/line-notif";
 import { AppError } from "../middleware/error";
 import type {
   ChangePasswordInput,
@@ -84,6 +85,7 @@ export async function getLineStatus(req: Request, res: Response) {
       lineNotifyTaskAssigned: true,
       lineNotifyLeaveDecision: true,
       lineNotifyReportReminder: true,
+      roleRef: { select: { lineNotifications: true } },
     },
   });
   res.json({
@@ -91,6 +93,8 @@ export async function getLineStatus(req: Request, res: Response) {
     linkedAt: user?.lineLinkedAt ?? null,
     lineEnabled: env.LINE_ENABLED,
     addFriendUrl: env.LINE_ADD_FRIEND_URL ?? null,
+    // Only the types this user's role allows are shown as toggles.
+    available: allowedNotifKeys(user?.roleRef?.lineNotifications),
     prefs: {
       taskAssigned: user?.lineNotifyTaskAssigned ?? true,
       leaveDecision: user?.lineNotifyLeaveDecision ?? true,

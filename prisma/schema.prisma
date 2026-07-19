@@ -147,6 +147,10 @@ model Role {
   /// means "inherit the built-in defaults for this role code". A navigation
   /// visibility layer only — API routes stay guarded by permissions.
   menuAccess  String[] @default([])
+  /// personal-LINE notification types members of this role are ALLOWED to
+  /// receive, e.g. ["taskAssigned","leaveDecision"]. Empty = all types allowed
+  /// (default). Users then opt in/out within this set.
+  lineNotifications String[] @default([])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

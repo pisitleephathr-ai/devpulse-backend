@@ -258,7 +258,7 @@ async function decide(req: Request, res: Response, status: LeaveStatus) {
       );
       await pushFlexToUsersWithPref(
         [leave.userId],
-        "lineNotifyLeaveDecision",
+        "leaveDecision",
         card.altText,
         card.contents
       );

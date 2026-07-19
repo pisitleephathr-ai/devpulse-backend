@@ -100,4 +100,5 @@ export const roleSelect = {
   isActive: true,
   permissions: true,
   menuAccess: true,
+  lineNotifications: true,
 } satisfies Prisma.RoleSelect;

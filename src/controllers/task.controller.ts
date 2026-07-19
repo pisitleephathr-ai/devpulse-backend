@@ -215,7 +215,7 @@ export async function createTask(req: Request, res: Response) {
       if (prefs.notifyNewTask) await pushFlexToLineGroup(card.altText, card.contents);
       await pushFlexToUsersWithPref(
         assigneeIds.filter((id) => id !== req.user!.id),
-        "lineNotifyTaskAssigned",
+        "taskAssigned",
         card.altText,
         card.contents
       );
@@ -342,12 +342,7 @@ export async function updateTask(req: Request, res: Response) {
         },
         base ? `${base}/tasks?task=${task.id}` : undefined
       );
-      await pushFlexToUsersWithPref(
-        added,
-        "lineNotifyTaskAssigned",
-        card.altText,
-        card.contents
-      );
+      await pushFlexToUsersWithPref(added, "taskAssigned", card.altText, card.contents);
     }
   }
 

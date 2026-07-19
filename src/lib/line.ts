@@ -1,5 +1,10 @@
 import { env } from "./env";
 import { prisma } from "./prisma";
+import {
+  notifColumn,
+  roleAllowsNotif,
+  type LineNotifKey,
+} from "./line-notif";
 
 const PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const REPLY_URL = "https://api.line.me/v2/bot/message/reply";
@@ -195,20 +200,15 @@ export async function pushFlexToUser(
   ]);
 }
 
-/** Per-user personal-LINE DM preference columns on User. */
-export type LinePersonalPref =
-  | "lineNotifyTaskAssigned"
-  | "lineNotifyLeaveDecision"
-  | "lineNotifyReportReminder";
-
 /**
- * DM a set of users, but only those who (a) linked their LINE and (b) have the
- * given personal preference enabled. One query resolves both; each recipient is
- * pushed individually. Best-effort — never throws.
+ * DM a set of users a personal notification of a given type, sent only to those
+ * who (a) linked their LINE, (b) belong to a role that ALLOWS this type, and
+ * (c) have the type enabled in their own preferences. One query resolves all
+ * three. Best-effort — never throws.
  */
 export async function pushToUsersWithPref(
   userIds: string[],
-  pref: LinePersonalPref,
+  key: LineNotifKey,
   messages: LineMessage[]
 ): Promise<void> {
   if (!env.LINE_ENABLED || !env.LINE_CHANNEL_ACCESS_TOKEN || !messages.length) {
@@ -216,6 +216,7 @@ export async function pushToUsersWithPref(
   }
   const ids = [...new Set(userIds.filter(Boolean))];
   if (!ids.length) return;
+  const column = notifColumn(key);
   try {
     const users = await prisma.user.findMany({
       where: { id: { in: ids }, lineUserId: { not: null } },
@@ -224,10 +225,13 @@ export async function pushToUsersWithPref(
         lineNotifyTaskAssigned: true,
         lineNotifyLeaveDecision: true,
         lineNotifyReportReminder: true,
+        roleRef: { select: { lineNotifications: true } },
       },
     });
     for (const u of users) {
-      if (!u.lineUserId || !u[pref]) continue;
+      if (!u.lineUserId) continue;
+      if (!roleAllowsNotif(u.roleRef?.lineNotifications, key)) continue; // role gate
+      if (!u[column]) continue; // user opted out
       await pushMessagesTo(u.lineUserId, messages);
     }
   } catch (err) {
@@ -238,11 +242,11 @@ export async function pushToUsersWithPref(
 /** Convenience: pref-gated Flex DM to several users. */
 export async function pushFlexToUsersWithPref(
   userIds: string[],
-  pref: LinePersonalPref,
+  key: LineNotifKey,
   altText: string,
   contents: LineMessage
 ): Promise<void> {
-  await pushToUsersWithPref(userIds, pref, [
+  await pushToUsersWithPref(userIds, key, [
     { type: "flex", altText: altText.slice(0, 400), contents },
   ]);
 }
