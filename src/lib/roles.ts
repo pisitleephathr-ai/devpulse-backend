@@ -22,6 +22,10 @@ export const PERMISSIONS = {
   TASK_DELETE: "TASK_DELETE",
   TASK_EDIT_ANY: "TASK_EDIT_ANY",
   REPORT_EDIT_ANY: "REPORT_EDIT_ANY",
+  /// Upload a task attachment even without being the assignee.
+  TASK_ATTACHMENT_UPLOAD: "TASK_ATTACHMENT_UPLOAD",
+  /// Delete any task attachment (not just one you uploaded).
+  TASK_ATTACHMENT_DELETE: "TASK_ATTACHMENT_DELETE",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -37,6 +41,8 @@ const TEAM_MANAGE_IMPLIES: Permission[] = [
   PERMISSIONS.TASK_DELETE,
   PERMISSIONS.TASK_EDIT_ANY,
   PERMISSIONS.REPORT_EDIT_ANY,
+  PERMISSIONS.TASK_ATTACHMENT_UPLOAD,
+  PERMISSIONS.TASK_ATTACHMENT_DELETE,
 ];
 
 /**

@@ -53,6 +53,21 @@ enum LeaveStatus {
   REJECTED
 }
 
+/// How a task attachment was provided.
+/// - URL: a plain link the user pasted (legacy behavior, still supported)
+/// - CLOUDINARY: a file uploaded to Cloudinary via signed direct upload
+enum AttachmentSource {
+  URL
+  CLOUDINARY
+}
+
+/// Coarse attachment classification, used to drive preview vs. download UI.
+enum AttachmentKind {
+  IMAGE
+  DOCUMENT
+  LINK
+}
+
 /* ----------------------------- Models ---------------------------- */
 
 model User {
@@ -82,6 +97,8 @@ model User {
   taskComments   TaskComment[]
   taskAssignments TaskAssignee[] @relation("TaskAssigneeUser")
   taskAssignedBy  TaskAssignee[] @relation("TaskAssignedBy")
+  uploadedAttachments TaskAttachment[] @relation("AttachmentUploader")
+  uploadIntents  UploadIntent[]
 
   @@index([role])
   @@index([roleId])
@@ -178,6 +195,7 @@ model Task {
   assignees   TaskAssignee[]
   links       TaskLink[]
   attachments TaskAttachment[]
+  uploadIntents UploadIntent[]
   comments    TaskComment[]
   checklist   TaskChecklistItem[]
   /// daily reports that optionally reference this task (additive)
@@ -272,17 +290,90 @@ model TaskLink {
 
 model TaskAttachment {
   id        String   @id @default(cuid())
+
+  /// Legacy fields — retained so existing URL attachments keep working and so
+  /// every attachment (URL or Cloudinary) has a stable display name + href.
+  /// For CLOUDINARY rows these mirror originalName / secureUrl.
   fileName  String
   fileUrl   String
   fileType  String?
   fileSize  Int?
+
+  /// How the attachment was provided. Defaults to URL so existing rows and the
+  /// legacy "paste a link" endpoint are classified correctly; Cloudinary
+  /// uploads set this explicitly.
+  source    AttachmentSource @default(URL)
+  /// Preview/download hint. Legacy rows default to LINK (the client still infers
+  /// image-vs-file from the URL); uploads set IMAGE or DOCUMENT explicitly.
+  kind      AttachmentKind   @default(LINK)
+
+  /// Original client-provided filename (sanitized) + optional display override.
+  originalName String?
+  displayName  String?
+  mimeType     String?
+  extension    String?
+
+  /// Cloudinary asset identity (null for URL attachments).
+  cloudinaryPublicId     String?
+  cloudinaryVersion      Int?
+  cloudinaryAssetId      String?
+  cloudinaryResourceType String?
+  cloudinaryFormat       String?
+
+  /// Canonical secure URL + a derived thumbnail (images only).
+  secureUrl    String?
+  thumbnailUrl String?
+
+  width  Int?
+  height Int?
+
+  /// Who uploaded it (null for legacy rows / seed data).
+  uploadedById String?
+  uploadedBy   User?   @relation("AttachmentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  /// Cloudinary deletion bookkeeping so a failed remote delete can be retried by
+  /// the cleanup job instead of silently leaking the asset.
+  deleteStatus String?
+  deletedAt    DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
   taskId String
 
+  @@unique([cloudinaryAssetId])
   @@index([taskId])
+  @@index([uploadedById])
+}
+
+/// Short-lived record of a signed-upload grant. Created when a signature is
+/// issued and consumed once when the client confirms the upload, which both
+/// binds the eventual asset to a specific task+user and prevents replay /
+/// duplicate attachments. Expired PENDING intents are swept by the cleanup job,
+/// which deletes any orphaned Cloudinary asset that never got confirmed.
+model UploadIntent {
+  id           String    @id @default(cuid())
+  taskId       String
+  userId       String
+  /// The Cloudinary public id the signature was scoped to (unique → single use).
+  publicId     String    @unique
+  fileName     String
+  mimeType     String
+  expectedSize Int
+  resourceType String
+  /// PENDING | COMPLETED | EXPIRED
+  status       String    @default("PENDING")
+  expiresAt    DateTime
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model LeaveRequest {

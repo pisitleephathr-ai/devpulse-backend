@@ -6,7 +6,9 @@ import { logActivity } from "../lib/activity";
 import { notifyMany } from "../lib/notify";
 import { pushFlexToLineGroup, appBaseUrl, getLinePrefs } from "../lib/line";
 import { taskCreatedFlex, taskStatusFlex } from "../lib/line-messages";
-import { isTeamManager } from "../lib/authz";
+import { isTeamManager, hasPermission } from "../lib/authz";
+import { PERMISSIONS } from "../lib/roles";
+import * as cld from "../lib/cloudinary";
 import { AppError } from "../middleware/error";
 import type {
   AttachmentInput,
@@ -36,7 +38,14 @@ const include = {
 
 const listInclude = {
   ...include,
-  _count: { select: { links: true, attachments: true, comments: true } },
+  _count: {
+    select: {
+      links: true,
+      // Exclude soft-deleted (DELETE_FAILED) attachments from the board count.
+      attachments: { where: { deletedAt: null } },
+      comments: true,
+    },
+  },
   // Just the done flags — enough to show "3/5" progress on a board card.
   checklist: { select: { done: true } },
 } satisfies Prisma.TaskInclude;
@@ -44,7 +53,8 @@ const listInclude = {
 const detailInclude = {
   ...include,
   links: { orderBy: { createdAt: "asc" } },
-  attachments: { orderBy: { createdAt: "asc" } },
+  // Hide soft-deleted attachments whose remote delete is still pending retry.
+  attachments: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
   checklist: { orderBy: { order: "asc" } },
 } satisfies Prisma.TaskInclude;
 
@@ -432,14 +442,96 @@ export async function addAttachment(req: Request, res: Response) {
 }
 
 export async function deleteAttachment(req: Request, res: Response) {
-  await assertCanEdit(req, req.params.taskId);
-  // Ensure the attachment actually belongs to this task (prevents IDOR).
+  const { taskId, attachmentId } = req.params;
+
+  // Fetch first so we can both check task membership (IDOR) and authorize by
+  // uploader — without leaking existence to unauthorized callers.
   const attachment = await prisma.taskAttachment.findUnique({
-    where: { id: req.params.attachmentId },
-    select: { taskId: true },
+    where: { id: attachmentId },
+    select: {
+      id: true,
+      taskId: true,
+      source: true,
+      uploadedById: true,
+      fileName: true,
+      deletedAt: true,
+      cloudinaryPublicId: true,
+      cloudinaryResourceType: true,
+      task: { select: { title: true, assigneeId: true, assignees: { select: { userId: true } } } },
+    },
   });
-  if (!attachment || attachment.taskId !== req.params.taskId)
+  if (!attachment || attachment.taskId !== taskId || attachment.deletedAt)
     throw new AppError(404, "ไม่พบไฟล์แนบ");
-  await prisma.taskAttachment.delete({ where: { id: req.params.attachmentId } });
+
+  // Authorization: a team manager, the TASK_ATTACHMENT_DELETE capability, or the
+  // person who uploaded the file. Legacy URL attachments (no uploader) remain
+  // deletable by an assignee, preserving the pre-upload behavior.
+  const uid = req.user!.id;
+  const isManager =
+    isTeamManager(req) || hasPermission(req, PERMISSIONS.TASK_ATTACHMENT_DELETE);
+  const isUploader = !!attachment.uploadedById && attachment.uploadedById === uid;
+  const isLegacyAssignee =
+    attachment.source === "URL" &&
+    (attachment.task.assigneeId === uid ||
+      attachment.task.assignees.some((a) => a.userId === uid));
+  if (!isManager && !isUploader && !isLegacyAssignee) {
+    throw new AppError(403, "คุณไม่มีสิทธิ์ลบไฟล์นี้");
+  }
+
+  // Remove the Cloudinary asset first (external side effect). If it fails we do
+  // NOT silently report success: soft-delete the row (freeing task capacity and
+  // hiding it) with DELETE_FAILED so the cleanup job retries, and log the error
+  // (attachmentId + publicId only — never any secret).
+  const publicId = attachment.cloudinaryPublicId;
+  const resourceType =
+    attachment.cloudinaryResourceType === "raw" ? "raw" : "image";
+  let remoteDeletePending = false;
+
+  if (attachment.source === "CLOUDINARY" && publicId && cld.isConfigured()) {
+    try {
+      const result = await cld.deleteAsset(publicId, resourceType);
+      if (result !== "ok" && result !== "not found") {
+        remoteDeletePending = true;
+        console.error(
+          `[attachment] Cloudinary delete returned "${result}" for attachment=${attachment.id} publicId=${publicId}`
+        );
+      }
+    } catch (err) {
+      remoteDeletePending = true;
+      console.error(
+        `[attachment] Cloudinary delete FAILED for attachment=${attachment.id} publicId=${publicId}:`,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (remoteDeletePending) {
+      // Keep the row for retry, but treat it as gone everywhere else.
+      await tx.taskAttachment.update({
+        where: { id: attachment.id },
+        data: { deleteStatus: "DELETE_FAILED", deletedAt: new Date() },
+      });
+    } else {
+      await tx.taskAttachment.delete({ where: { id: attachment.id } });
+    }
+    await logActivity(
+      {
+        userId: uid,
+        action: "task.attachment.delete",
+        message: `ลบไฟล์ "${attachment.fileName}" จากงาน "${attachment.task.title}"`,
+        entityType: "task",
+        entityId: taskId,
+      },
+      tx
+    );
+  });
+
+  if (remoteDeletePending) {
+    // Honest signal: the DB record is removed but the remote asset deletion is
+    // queued for retry (not a clean 204).
+    res.status(200).json({ ok: true, remoteDeletePending: true });
+    return;
+  }
   res.status(204).send();
 }
