@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
 import { notifyMany } from "../lib/notify";
+import { pushToUsersWithPref, appBaseUrl } from "../lib/line";
 import { isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
 import type {
@@ -62,16 +63,25 @@ export async function createComment(req: Request, res: Response) {
       },
       select: { id: true },
     });
-    await notifyMany(
-      recipients.map((u) => u.id),
+    const recipientIds = recipients.map((u) => u.id);
+    await notifyMany(recipientIds, {
+      type: "mention",
+      title: "ถูกกล่าวถึงในความคิดเห็น",
+      message: `${comment.author.name} กล่าวถึงคุณในงาน "${task.title}"`,
+      entityType: "task",
+      entityId: task.id,
+    });
+    // Personal LINE DM (per-user pref + role allow).
+    const base = appBaseUrl();
+    await pushToUsersWithPref(recipientIds, "mention", [
       {
-        type: "mention",
-        title: "ถูกกล่าวถึงในความคิดเห็น",
-        message: `${comment.author.name} กล่าวถึงคุณในงาน "${task.title}"`,
-        entityType: "task",
-        entityId: task.id,
-      }
-    );
+        type: "text",
+        text:
+          `💬 ${comment.author.name} กล่าวถึงคุณในงาน "${task.title}"\n` +
+          `“${comment.message.trim().slice(0, 120)}”` +
+          (base ? `\n\n🔗 ${base}/tasks?task=${task.id}` : ""),
+      },
+    ]);
   }
 
   res.status(201).json({ comment });

@@ -91,6 +91,10 @@ model User {
   lineNotifyReportReminder Boolean @default(true)
   /// (for approvers) DM when a new leave request is submitted
   lineNotifyLeaveRequest   Boolean @default(true)
+  /// DM when a task you're assigned to changes status
+  lineNotifyTaskStatus     Boolean @default(true)
+  /// DM when you're @-mentioned in a task comment
+  lineNotifyMention        Boolean @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -210,6 +214,9 @@ model Task {
   priority    TaskPriority @default(MEDIUM)
   status      TaskStatus   @default(TODO)
   dueDate     DateTime?
+  /// when the task first entered DONE (set on that transition, cleared if it
+  /// leaves DONE). Drives on-time-vs-late completion metrics against dueDate.
+  completedAt DateTime?
   createdAt   DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
@@ -555,8 +562,13 @@ model TeamSetting {
   lineDailyReportSummary    Boolean  @default(false)
   /// HH:mm (Bangkok) the report summary is sent, on working days only
   lineDailyReportSummaryTime String  @default("18:00")
+  /// weekly team-performance summary (on-time ranking) → LINE group, sent on
+  /// Mondays at lineWeeklyPerformanceTime.
+  lineWeeklyPerformance     Boolean  @default(false)
+  lineWeeklyPerformanceTime String   @default("09:00")
   /// dedup guards — YYYY-MM-DD (Bangkok) each daily summary last fired. Internal.
   lineLeaveSummaryLastRun   String?
   lineReportSummaryLastRun  String?
+  lineWeeklyPerformanceLastRun String?
   updatedAt          DateTime @updatedAt
 }

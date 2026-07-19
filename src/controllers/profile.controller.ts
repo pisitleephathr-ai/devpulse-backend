@@ -84,6 +84,8 @@ export async function getLineStatus(req: Request, res: Response) {
         lineUserId: true,
         lineLinkedAt: true,
         lineNotifyTaskAssigned: true,
+        lineNotifyTaskStatus: true,
+        lineNotifyMention: true,
         lineNotifyLeaveDecision: true,
         lineNotifyLeaveRequest: true,
         lineNotifyReportReminder: true,
@@ -103,6 +105,8 @@ export async function getLineStatus(req: Request, res: Response) {
     available: allowedNotifKeys(user?.roleRef?.lineNotifications),
     prefs: {
       taskAssigned: user?.lineNotifyTaskAssigned ?? true,
+      taskStatus: user?.lineNotifyTaskStatus ?? true,
+      mention: user?.lineNotifyMention ?? true,
       leaveDecision: user?.lineNotifyLeaveDecision ?? true,
       leaveRequest: user?.lineNotifyLeaveRequest ?? true,
       reportReminder: user?.lineNotifyReportReminder ?? true,
@@ -119,6 +123,12 @@ export async function updateLinePrefs(req: Request, res: Response) {
       ...(body.taskAssigned !== undefined && {
         lineNotifyTaskAssigned: body.taskAssigned,
       }),
+      ...(body.taskStatus !== undefined && {
+        lineNotifyTaskStatus: body.taskStatus,
+      }),
+      ...(body.mention !== undefined && {
+        lineNotifyMention: body.mention,
+      }),
       ...(body.leaveDecision !== undefined && {
         lineNotifyLeaveDecision: body.leaveDecision,
       }),
@@ -131,6 +141,8 @@ export async function updateLinePrefs(req: Request, res: Response) {
     },
     select: {
       lineNotifyTaskAssigned: true,
+      lineNotifyTaskStatus: true,
+      lineNotifyMention: true,
       lineNotifyLeaveDecision: true,
       lineNotifyLeaveRequest: true,
       lineNotifyReportReminder: true,
@@ -139,6 +151,8 @@ export async function updateLinePrefs(req: Request, res: Response) {
   res.json({
     prefs: {
       taskAssigned: user.lineNotifyTaskAssigned,
+      taskStatus: user.lineNotifyTaskStatus,
+      mention: user.lineNotifyMention,
       leaveDecision: user.lineNotifyLeaveDecision,
       leaveRequest: user.lineNotifyLeaveRequest,
       reportReminder: user.lineNotifyReportReminder,

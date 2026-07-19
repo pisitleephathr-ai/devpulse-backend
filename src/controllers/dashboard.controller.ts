@@ -9,6 +9,7 @@ import {
 } from "../lib/date";
 import { workdayInfo } from "../lib/workday";
 import { onLeaveUserIds } from "../lib/leave-status";
+import { onTimeStatsByUser } from "../lib/ontime";
 
 const NO_BLOCKER = new Set(["", "ไม่มี", "—", "วันนี้ไม่มี", "-", "ไม่มีครับ", "ไม่มีค่ะ"]);
 
@@ -215,6 +216,8 @@ export async function insights(_req: Request, res: Response) {
   // People on APPROVED leave today aren't expected to report — exclude them from
   // "missing" and flag them as on-leave in the workload.
   const onLeave = await onLeaveUserIds(today);
+  // Per-person on-time completion stats (DONE tasks with a due date).
+  const onTime = await onTimeStatsByUser();
   const missing = isWorkingDay
     ? requiredReporters.filter((u) => !submittedIds.has(u.id) && !onLeave.has(u.id))
     : [];
@@ -261,6 +264,7 @@ export async function insights(_req: Request, res: Response) {
         byUser.get(u.id) ??
         { todo: 0, inProgress: 0, review: 0, readyToTest: 0, done: 0 };
       const open = c.todo + c.inProgress + c.review + c.readyToTest;
+      const ot = onTime.get(u.id);
       return {
         id: u.id,
         name: u.name,
@@ -270,6 +274,11 @@ export async function insights(_req: Request, res: Response) {
         ...c,
         open,
         total: open + c.done,
+        // on-time completion (null rate when nothing closed yet with a due date)
+        closed: ot?.closed ?? 0,
+        onTimeClosed: ot?.onTime ?? 0,
+        lateClosed: ot?.late ?? 0,
+        onTimeRate: ot && ot.closed > 0 ? ot.rate : null,
       };
     })
     .sort((a, b) => b.inProgress - a.inProgress || b.open - a.open);

@@ -73,18 +73,22 @@ async function myTasks(lineUserId: string): Promise<LineMessage[]> {
   if (!tasks.length) {
     return [text(`🎉 คุณ${user.name} ไม่มีงานค้างอยู่ตอนนี้`)];
   }
+  const today = getBangkokDateString();
+  let overdueCount = 0;
   const lines = tasks.map((t) => {
-    const due = t.dueDate ? ` · ครบ ${thaiDate(t.dueDate)}` : "";
-    return `• [${t.project.code}] ${t.title}\n   ${STATUS_LABEL[t.status]}${due}`;
+    const overdue = t.dueDate && getBangkokDateString(t.dueDate) < today;
+    if (overdue) overdueCount += 1;
+    const due = t.dueDate
+      ? overdue
+        ? ` · ⚠️ เลยกำหนด ${thaiDate(t.dueDate)}`
+        : ` · ครบ ${thaiDate(t.dueDate)}`
+      : "";
+    return `${overdue ? "🔴" : "•"} [${t.project.code}] ${t.title}\n   ${STATUS_LABEL[t.status]}${due}`;
   });
-  return [
-    text(
-      withLink(
-        `📋 งานของคุณ${user.name} (${tasks.length})\n\n${lines.join("\n")}`,
-        "/tasks"
-      )
-    ),
-  ];
+  const head =
+    `📋 งานของคุณ${user.name} (${tasks.length})` +
+    (overdueCount ? ` · เลยกำหนด ${overdueCount}` : "");
+  return [text(withLink(`${head}\n\n${lines.join("\n")}`, "/tasks"))];
 }
 
 /** "ใครลาวันนี้" — everyone on approved leave covering today. */

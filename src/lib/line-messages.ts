@@ -418,3 +418,78 @@ export function reportSummaryFlex(
     contents,
   };
 }
+
+export type PerformanceEntry = {
+  name: string;
+  closed: number;
+  onTime: number;
+  late: number;
+  rate: number;
+};
+
+/** One performance row: name + a colored on-time %, with closed/late detail. */
+function performanceRow(e: PerformanceEntry, medal: string): LineMessage {
+  const color = e.rate >= 80 ? "#16a34a" : e.rate >= 50 ? "#d97706" : "#dc2626";
+  return {
+    type: "box",
+    layout: "baseline",
+    spacing: "sm",
+    margin: "md",
+    contents: [
+      { type: "text", text: medal, size: "sm", flex: 0 },
+      { type: "text", text: e.name, color: INK, size: "sm", weight: "bold", flex: 5, wrap: true },
+      { type: "text", text: `${e.rate}%`, color, size: "sm", weight: "bold", align: "end", flex: 2 },
+    ],
+  };
+}
+
+/**
+ * Weekly team performance card: on-time completion ranking. `entries` are already
+ * sorted best-first by the caller. Shows a "top" group and a "needs improvement"
+ * group so the team can see who's on track and who's slipping.
+ */
+export function performanceSummaryFlex(
+  rangeLabel: string,
+  entries: PerformanceEntry[],
+  url?: string
+): { altText: string; contents: LineMessage } {
+  const body: LineMessage[] = [
+    titleLine("สรุปผลงานทีม"),
+    { type: "text", text: `ปิดงานตรงเวลา · ${rangeLabel}`, color: MUTED, size: "xs" },
+  ];
+
+  if (!entries.length) {
+    body.push(
+      { type: "separator", margin: "md", color: HAIRLINE },
+      { type: "text", text: "ยังไม่มีงานที่ปิดพร้อมกำหนดส่งในช่วงนี้", color: MUTED, size: "sm", wrap: true }
+    );
+  } else {
+    const top = entries.slice(0, 5);
+    const worst = [...entries].reverse().find((e) => e.late > 0);
+
+    body.push({ type: "separator", margin: "md", color: HAIRLINE });
+    body.push({ type: "text", text: "🏆 ผลงานดี", color: "#16a34a", size: "xs", weight: "bold", margin: "md" });
+    top.forEach((e, i) =>
+      body.push(performanceRow(e, i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "•"))
+    );
+
+    if (worst && !top.slice(0, 3).includes(worst)) {
+      body.push({ type: "separator", margin: "md", color: HAIRLINE });
+      body.push({ type: "text", text: "⚠️ ควรปรับปรุง (ปิดงานไม่ตรงแผน)", color: "#dc2626", size: "xs", weight: "bold", margin: "md" });
+      body.push(performanceRow(worst, "⚠️"));
+      body.push({
+        type: "text",
+        text: `ปิดสาย ${worst.late} จาก ${worst.closed} งาน`,
+        color: MUTED,
+        size: "xs",
+      });
+    }
+  }
+
+  const contents = shell("🏆 สรุปผลงานทีม", body, {
+    url,
+    headerColor: TEAL,
+    buttonLabel: "เปิดแดชบอร์ด ↗",
+  });
+  return { altText: `🏆 สรุปผลงานทีม (${rangeLabel})`, contents };
+}

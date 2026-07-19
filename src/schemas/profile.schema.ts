@@ -24,6 +24,8 @@ export const changePasswordSchema = z
 export const linePrefsSchema = z
   .object({
     taskAssigned: z.boolean().optional(),
+    taskStatus: z.boolean().optional(),
+    mention: z.boolean().optional(),
     leaveDecision: z.boolean().optional(),
     leaveRequest: z.boolean().optional(),
     reportReminder: z.boolean().optional(),

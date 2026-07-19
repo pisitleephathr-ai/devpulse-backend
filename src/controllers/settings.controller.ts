@@ -44,7 +44,8 @@ export async function getSettings(_req: Request, res: Response) {
 
 /** POST /api/settings/line/test/:kind — fire a LINE summary now (manager/admin). */
 export async function testLineSummary(req: Request, res: Response) {
-  const kind = req.params.kind === "leave" ? "leave" : "report";
+  const k = req.params.kind;
+  const kind = k === "leave" ? "leave" : k === "performance" ? "performance" : "report";
   const result = await triggerSummary(kind);
   res.json(result);
 }
@@ -59,6 +60,7 @@ export async function updateSettings(req: Request, res: Response) {
   const extra: {
     lineReportSummaryLastRun?: null;
     lineLeaveSummaryLastRun?: null;
+    lineWeeklyPerformanceLastRun?: null;
   } = {};
   if (existing) {
     const reportRearmed =
@@ -72,6 +74,12 @@ export async function updateSettings(req: Request, res: Response) {
         data.lineDailyLeaveSummaryTime !== existing.lineDailyLeaveSummaryTime) ||
       (data.lineDailyLeaveSummary === true && !existing.lineDailyLeaveSummary);
     if (leaveRearmed) extra.lineLeaveSummaryLastRun = null;
+
+    const perfRearmed =
+      (data.lineWeeklyPerformanceTime !== undefined &&
+        data.lineWeeklyPerformanceTime !== existing.lineWeeklyPerformanceTime) ||
+      (data.lineWeeklyPerformance === true && !existing.lineWeeklyPerformance);
+    if (perfRearmed) extra.lineWeeklyPerformanceLastRun = null;
   }
 
   const setting = existing

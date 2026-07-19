@@ -141,6 +141,8 @@ export async function createTask(req: Request, res: Response) {
       assigneeId: assigneeIds[0] ?? null,
       priority: data.priority ?? "MEDIUM",
       status: data.status ?? "TODO",
+      // A task created straight into DONE is completed now.
+      completedAt: data.status === "DONE" ? new Date() : null,
       dueDate: data.dueDate ?? null,
       assignees: assigneeIds.length
         ? { create: assigneeIds.map((userId) => ({ userId, assignedById: req.user!.id })) }
@@ -256,11 +258,22 @@ export async function updateTask(req: Request, res: Response) {
   const beforeIds = new Set(before?.assignees.map((a) => a.userId) ?? []);
   const nextIds = assigneeIds ? [...new Set(assigneeIds.filter(Boolean))] : null;
 
+  // Maintain completedAt when the edit changes status (mirrors updateTaskStatus).
+  const completedAtUpdate =
+    scalar.status === undefined
+      ? {}
+      : scalar.status === "DONE"
+        ? before?.status === "DONE"
+          ? {}
+          : { completedAt: new Date() }
+        : { completedAt: null };
+
   const task = await prisma.$transaction(async (tx) => {
     await tx.task.update({
       where: { id },
       data: {
         ...scalar,
+        ...completedAtUpdate,
         // Keep the legacy primary in sync when assignees change.
         ...(nextIds ? { assigneeId: nextIds[0] ?? null } : {}),
       },
@@ -346,14 +359,9 @@ export async function updateTask(req: Request, res: Response) {
     }
   }
 
-  // If this edit changed the status to TODO/DONE, announce it on LINE too — so
-  // changing status via the edit form behaves like dragging the card.
-  if (
-    task &&
-    before &&
-    task.status !== before.status &&
-    (await getLinePrefs()).statuses.includes(task.status)
-  ) {
+  // If this edit changed the status, announce on LINE — group card respects the
+  // team's status toggle; personal DMs respect each assignee's own pref.
+  if (task && before && task.status !== before.status) {
     const mover = await prisma.user.findUnique({
       where: { id: req.user!.id },
       select: { name: true },
@@ -370,7 +378,15 @@ export async function updateTask(req: Request, res: Response) {
       },
       base ? `${base}/tasks?task=${task.id}` : undefined
     );
-    await pushFlexToLineGroup(statusCard.altText, statusCard.contents);
+    if ((await getLinePrefs()).statuses.includes(task.status)) {
+      await pushFlexToLineGroup(statusCard.altText, statusCard.contents);
+    }
+    await pushFlexToUsersWithPref(
+      task.assignees.map((a) => a.user.id).filter((uid) => uid !== req.user!.id),
+      "taskStatus",
+      statusCard.altText,
+      statusCard.contents
+    );
   }
 
   res.json({ task: flatten(task!) });
@@ -386,7 +402,16 @@ export async function updateTaskStatus(req: Request, res: Response) {
   });
   const task = await prisma.task.update({
     where: { id: req.params.id },
-    data: { status },
+    data: {
+      status,
+      // Stamp/clear the completion time on the DONE transition (for on-time metrics).
+      completedAt:
+        status === "DONE"
+          ? before?.status === "DONE"
+            ? undefined
+            : new Date()
+          : null,
+    },
     include,
   });
 
@@ -410,12 +435,9 @@ export async function updateTaskStatus(req: Request, res: Response) {
     }
   );
 
-  // Announce the status change to LINE — only for statuses the team enabled,
-  // and only when the status actually changed.
-  if (
-    before?.status !== status &&
-    (await getLinePrefs()).statuses.includes(status)
-  ) {
+  // Announce the status change on LINE — group card respects the team's status
+  // toggle; personal DMs respect each assignee's own pref.
+  if (before?.status !== status) {
     const mover = await prisma.user.findUnique({
       where: { id: req.user!.id },
       select: { name: true },
@@ -432,7 +454,15 @@ export async function updateTaskStatus(req: Request, res: Response) {
       },
       base ? `${base}/tasks?task=${task.id}` : undefined
     );
-    await pushFlexToLineGroup(statusCard.altText, statusCard.contents);
+    if ((await getLinePrefs()).statuses.includes(status)) {
+      await pushFlexToLineGroup(statusCard.altText, statusCard.contents);
+    }
+    await pushFlexToUsersWithPref(
+      task.assignees.map((a) => a.user.id).filter((uid) => uid !== req.user!.id),
+      "taskStatus",
+      statusCard.altText,
+      statusCard.contents
+    );
   }
 
   res.json({ task: flatten(task) });

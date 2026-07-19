@@ -28,6 +28,10 @@ export const updateSettingsSchema = z
     lineDailyReportSummaryTime: z
       .string()
       .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "ต้องเป็นเวลา HH:mm"),
+    lineWeeklyPerformance: z.boolean(),
+    lineWeeklyPerformanceTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "ต้องเป็นเวลา HH:mm"),
     // comma-separated menu ids
     menuOrder: z.string(),
   })

@@ -1,6 +1,11 @@
 import { env } from "./env";
 import { prisma } from "./prisma";
-import { appBaseUrl, pushFlexToLineGroup, lineDeliveryStatus } from "./line";
+import {
+  appBaseUrl,
+  pushFlexToLineGroup,
+  pushToUsersWithPref,
+  lineDeliveryStatus,
+} from "./line";
 import {
   getBangkokDateString,
   getBangkokHM,
@@ -10,9 +15,12 @@ import {
 import {
   leaveTodayFlex,
   reportSummaryFlex,
+  performanceSummaryFlex,
   type LeaveTodayEntry,
   type ReportEntry,
+  type PerformanceEntry,
 } from "./line-messages";
+import { onTimeStatsByUser } from "./ontime";
 
 /**
  * Lightweight, dependency-free daily scheduler for the two timed LINE summaries
@@ -109,6 +117,7 @@ async function sendReportSummary(today: string): Promise<SendResult> {
   }
   const submitted: ReportEntry[] = [];
   const missingNames: string[] = [];
+  const missingIds: string[] = [];
   for (const u of expected) {
     const rep = byAuthor.get(u.id);
     if (rep) {
@@ -119,6 +128,7 @@ async function sendReportSummary(today: string): Promise<SendResult> {
       });
     } else {
       missingNames.push(u.name);
+      missingIds.push(u.id);
     }
   }
 
@@ -127,6 +137,49 @@ async function sendReportSummary(today: string): Promise<SendResult> {
     gte,
     { total: expected.length, submitted, missingNames },
     base ? `${base}/reports` : undefined
+  );
+  await pushFlexToLineGroup(card.altText, card.contents);
+
+  // Auto personal nudge to those who still haven't submitted (per-user pref).
+  if (missingIds.length) {
+    await pushToUsersWithPref(missingIds, "reportReminder", [
+      {
+        type: "text",
+        text:
+          "⏰ อย่าลืมส่งรายงานประจำวันก่อนเลิกงานนะครับ" +
+          (base ? `\nส่งได้ที่: ${base}/reports` : ""),
+      },
+    ]);
+  }
+  return { pushed: true };
+}
+
+/** Build + push the weekly team performance (on-time ranking) card. */
+async function sendPerformanceSummary(): Promise<SendResult> {
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const stats = await onTimeStatsByUser(since);
+  if (!stats.size) return { pushed: false, reason: "สัปดาห์นี้ยังไม่มีงานที่ปิดพร้อมกำหนดส่ง" };
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: [...stats.keys()] } },
+    select: { id: true, name: true },
+  });
+  const nameById = new Map(users.map((u) => [u.id, u.name]));
+  const entries: PerformanceEntry[] = [...stats.values()]
+    .map((s) => ({
+      name: nameById.get(s.userId) ?? "—",
+      closed: s.closed,
+      onTime: s.onTime,
+      late: s.late,
+      rate: s.rate,
+    }))
+    .sort((a, b) => b.rate - a.rate || b.closed - a.closed);
+
+  const base = appBaseUrl();
+  const card = performanceSummaryFlex(
+    "7 วันล่าสุด",
+    entries,
+    base ? `${base}/dashboard` : undefined
   );
   await pushFlexToLineGroup(card.altText, card.contents);
   return { pushed: true };
@@ -138,7 +191,7 @@ async function sendReportSummary(today: string): Promise<SendResult> {
  * connection so the caller gets a clear reason when delivery isn't possible.
  */
 export async function triggerSummary(
-  kind: "leave" | "report"
+  kind: "leave" | "report" | "performance"
 ): Promise<{ sent: boolean; reason?: string }> {
   const status = await lineDeliveryStatus();
   if (!status.ready) return { sent: false, reason: status.reason };
@@ -146,7 +199,9 @@ export async function triggerSummary(
   const r =
     kind === "leave"
       ? await sendLeaveSummary(today)
-      : await sendReportSummary(today);
+      : kind === "report"
+        ? await sendReportSummary(today)
+        : await sendPerformanceSummary();
   return { sent: r.pushed, reason: r.reason };
 }
 
@@ -184,9 +239,15 @@ async function tick(): Promise<void> {
     setting.lineDailyReportSummary &&
     setting.lineReportSummaryLastRun !== today &&
     now >= hm(setting.lineDailyReportSummaryTime, "18:00");
-  if (!leaveDue && !reportDue) return;
+  // Weekly performance summary: Mondays only (Bangkok weekday 1).
+  const performanceDue =
+    setting.lineWeeklyPerformance &&
+    bangkokWeekday() === 1 &&
+    setting.lineWeeklyPerformanceLastRun !== today &&
+    now >= hm(setting.lineWeeklyPerformanceTime, "09:00");
+  if (!leaveDue && !reportDue && !performanceDue) return;
 
-  // A company holiday is a day off — send neither summary.
+  // A company holiday is a day off — send nothing.
   if (await isCompanyHoliday(today)) return;
 
   if (leaveDue) {
@@ -206,6 +267,16 @@ async function tick(): Promise<void> {
     });
     await sendReportSummary(today).catch((e) =>
       console.warn("[scheduler] report summary failed:", e)
+    );
+  }
+
+  if (performanceDue) {
+    await prisma.teamSetting.update({
+      where: { id: setting.id },
+      data: { lineWeeklyPerformanceLastRun: today },
+    });
+    await sendPerformanceSummary().catch((e) =>
+      console.warn("[scheduler] performance summary failed:", e)
     );
   }
 }

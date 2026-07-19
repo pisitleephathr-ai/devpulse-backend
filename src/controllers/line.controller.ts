@@ -94,12 +94,20 @@ async function handleUserEvent(ev: {
         ev.replyToken,
         `✅ เชื่อมต่อบัญชีสำเร็จ คุณ${linked.name}\nจากนี้จะได้รับการแจ้งเตือนงานส่วนตัวทาง LINE นี้ครับ`
       );
-    } else {
-      await replyTextToLine(
-        ev.replyToken,
-        `ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว\n${LINK_HELP}`
-      );
+      return;
     }
+    // Not a valid code. If this LINE is already linked, the user is just chatting
+    // — reply with a friendly menu hint instead of a scary "code not found".
+    const already = await prisma.user.findFirst({
+      where: { lineUserId },
+      select: { name: true },
+    });
+    await replyTextToLine(
+      ev.replyToken,
+      already
+        ? `สวัสดีคุณ${already.name} 👋 ใช้เมนูด้านล่างได้เลยครับ:\n• งานของฉัน\n• ใครลาวันนี้\n• สถานะรายงานวันนี้\nหรือกดปุ่มเปิดหน้าเว็บเพื่อดูรายละเอียด`
+        : `ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว\n${LINK_HELP}`
+    );
   }
 }
 
