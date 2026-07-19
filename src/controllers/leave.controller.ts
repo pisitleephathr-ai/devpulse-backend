@@ -6,7 +6,7 @@ import { logActivity } from "../lib/activity";
 import { notify, notifyMany } from "../lib/notify";
 import { pushFlexToLineGroup, appBaseUrl, getLinePrefs } from "../lib/line";
 import { leaveFlex } from "../lib/line-messages";
-import { isFullAdmin, isTeamManager } from "../lib/authz";
+import { isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
 
 /** Best-effort LINE card for a leave submit/decision (never throws). */
@@ -195,10 +195,9 @@ async function decide(req: Request, res: Response, status: LeaveStatus) {
   if (existing.status !== "PENDING") {
     throw new AppError(409, "คำขอนี้ถูกดำเนินการไปแล้ว");
   }
-  // A user may not approve/reject their own leave (admins may override).
-  if (existing.userId === req.user!.id && !isFullAdmin(req)) {
-    throw new AppError(403, "ไม่สามารถอนุมัติ/ปฏิเสธคำขอลาของตนเองได้");
-  }
+  // Anyone reaching this endpoint already holds leave-approval rights (route is
+  // gated by isManagerOrAdmin / TEAM_MANAGE), so approving one's OWN leave is
+  // allowed too.
 
   const verb = status === "APPROVED" ? "อนุมัติ" : "ปฏิเสธ";
   const leave = await prisma.$transaction(async (tx) => {
