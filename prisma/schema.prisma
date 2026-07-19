@@ -114,6 +114,8 @@ model User {
   lineLinkCode   LineLinkCode?
   actionItemsAssigned ActionItem[] @relation("ActionItemAssignee")
   actionItemsCreated  ActionItem[] @relation("ActionItemCreatedBy")
+  kudosSent     Kudos[] @relation("KudosFrom")
+  kudosReceived Kudos[] @relation("KudosTo")
 
   @@index([role])
   @@index([roleId])
@@ -637,4 +639,22 @@ model ActionItem {
 enum ActionItemStatus {
   OPEN
   DONE
+}
+
+/// A "kudos" — a public shout-out one teammate gives another. Shown on the team
+/// kudos wall; the recipient is notified. Purely appreciation, never gated.
+model Kudos {
+  id        String   @id @default(cuid())
+  message   String
+  /// optional labeled category, e.g. "helpful" | "fast" | "quality" (UI-defined)
+  category  String?
+  createdAt DateTime @default(now())
+
+  fromUser   User   @relation("KudosFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  fromUserId String
+  toUser     User   @relation("KudosTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  toUserId   String
+
+  @@index([toUserId])
+  @@index([createdAt])
 }
