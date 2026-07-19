@@ -57,14 +57,16 @@ export async function summary(_req: Request, res: Response) {
     }),
     prisma.task.groupBy({ by: ["projectId", "status"], _count: { _all: true } }),
     prisma.project.findMany({ select: { id: true, name: true, code: true, color: true } }),
-    // The dashboard feed shows only team-work activity (tasks, reports, leaves,
-    // projects). People/permission admin events (user.*, role.*) are sensitive
-    // and stay on the dedicated Activity audit page, not the shared dashboard.
+    // The dashboard feed shows only core team-work activity: the task board
+    // (task.*), daily reports (report.*), and APPROVED leave requests. Everything
+    // else (projects, comments, pending/rejected leaves, and the sensitive
+    // user.*/role.* admin events) stays on the dedicated Activity audit page.
     prisma.activityLog.findMany({
       where: {
-        NOT: [
-          { action: { startsWith: "user." } },
-          { action: { startsWith: "role." } },
+        OR: [
+          { action: { startsWith: "task." } },
+          { action: { startsWith: "report." } },
+          { action: { in: ["leave.approve", "leave.approved"] } },
         ],
       },
       orderBy: { createdAt: "desc" },
