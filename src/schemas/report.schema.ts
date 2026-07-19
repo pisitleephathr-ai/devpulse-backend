@@ -4,6 +4,8 @@ const status = z.enum(["SUBMITTED", "DRAFT", "LATE"]);
 
 /** One report line: a piece of work + how far it got today + an optional note. */
 const reportItem = z.object({
+  /** "DID" = งานที่ทำล่าสุด, "PLAN" = แผนงานวันนี้ */
+  section: z.enum(["DID", "PLAN"]).default("DID"),
   /** optional link to a board task */
   taskId: z.string().min(1).nullish(),
   title: z.string().min(1, "กรุณากรอกชื่องาน").max(300),

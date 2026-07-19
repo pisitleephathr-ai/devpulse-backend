@@ -47,7 +47,7 @@ export async function standup(req: Request, res: Response) {
           orderBy: { createdAt: "asc" },
         },
         items: {
-          select: { id: true, title: true, progress: true, note: true },
+          select: { id: true, section: true, title: true, progress: true, note: true },
           orderBy: { order: "asc" },
         },
       },

@@ -216,6 +216,8 @@ model DailyReport {
 /// and an optional note/blocker. Optionally linked to a board task.
 model DailyReportItem {
   id        String   @id @default(cuid())
+  /// which section of the report: "DID" (งานที่ทำล่าสุด) or "PLAN" (แผนงานวันนี้)
+  section   String   @default("DID")
   /// work description (free text, or the linked task's title)
   title     String
   /// percent complete for the day, 0-100

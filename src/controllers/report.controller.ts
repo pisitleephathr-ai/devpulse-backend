@@ -53,6 +53,7 @@ function serialize<T extends { relatedTasks: { task: unknown }[] }>(report: T) {
 }
 
 type NormItem = {
+  section: "DID" | "PLAN";
   taskId: string | null;
   title: string;
   progress: number;
@@ -65,6 +66,7 @@ async function resolveItems(
   items: ReportItemInput[]
 ): Promise<NormItem[]> {
   const norm: NormItem[] = items.map((it, i) => ({
+    section: it.section === "PLAN" ? "PLAN" : "DID",
     taskId: it.taskId ?? null,
     title: it.title.trim(),
     progress: Math.max(0, Math.min(100, Math.round(it.progress ?? 0))),
@@ -94,17 +96,18 @@ function deriveFromItems(items: NormItem[]): {
   blockers: string;
   summary: string;
 } {
-  const did = items.map((i) => `${i.title} — ${i.progress}%`).join("\n");
+  const didItems = items.filter((i) => i.section === "DID");
+  const planItems = items.filter((i) => i.section === "PLAN");
+  const did = didItems.map((i) => `${i.title} — ${i.progress}%`).join("\n");
+  const plan = planItems.map((i) => `${i.title} (${i.progress}%)`).join("\n");
   const blockers = items
     .filter((i) => i.note.length > 0)
     .map((i) => `${i.title}: ${i.note}`)
     .join("\n");
-  const plan = items
-    .filter((i) => i.progress < 100)
-    .map((i) => `${i.title} (${i.progress}%)`)
-    .join("\n");
-  const done = items.filter((i) => i.progress >= 100).length;
-  const summary = `${done}/${items.length} งานเสร็จวันนี้`;
+  const done = didItems.filter((i) => i.progress >= 100).length;
+  const summary = didItems.length
+    ? `${done}/${didItems.length} งานเสร็จวันนี้`
+    : `วางแผน ${planItems.length} งาน`;
   return { did, plan, blockers, summary };
 }
 
@@ -242,6 +245,7 @@ export async function createReport(req: Request, res: Response) {
       items: items
         ? {
             create: items.map((i) => ({
+              section: i.section,
               taskId: i.taskId,
               title: i.title,
               progress: i.progress,
@@ -318,6 +322,7 @@ export async function updateReport(req: Request, res: Response) {
         await tx.dailyReportItem.createMany({
           data: resolvedItems.map((i) => ({
             reportId: id,
+            section: i.section,
             taskId: i.taskId,
             title: i.title,
             progress: i.progress,
