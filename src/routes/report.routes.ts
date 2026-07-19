@@ -15,6 +15,8 @@ const router = Router();
 router.use(authenticate);
 
 router.get("/", validate({ query: reportQuerySchema }), asyncHandler(ctrl.listReports));
+// Must precede "/:id" so "workday" isn't captured as an id.
+router.get("/workday", asyncHandler(ctrl.workdayStatus));
 router.get("/:id", validate({ params: idParam }), asyncHandler(ctrl.getReport));
 router.post("/", validate({ body: createReportSchema }), asyncHandler(ctrl.createReport));
 router.patch(

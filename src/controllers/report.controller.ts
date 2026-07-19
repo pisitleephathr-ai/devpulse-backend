@@ -4,6 +4,8 @@ import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
 import { isTeamManager } from "../lib/authz";
+import { workdayInfo } from "../lib/workday";
+import { getBangkokDateString } from "../lib/date";
 import { AppError } from "../middleware/error";
 import type {
   CreateReportInput,
@@ -63,6 +65,17 @@ function summarize(did: string) {
 /** True when the acting user owns the record or can manage the team. */
 function canManage(req: Request, ownerId: string) {
   return req.user!.id === ownerId || isTeamManager(req);
+}
+
+/**
+ * GET /api/reports/workday?date=YYYY-MM-DD — whether a Bangkok day is a working
+ * day (+ the holiday, if any). Lets the reports page suppress the "you haven't
+ * submitted today" nudge on weekends/holidays. Any authenticated user.
+ */
+export async function workdayStatus(req: Request, res: Response) {
+  const dateStr = (req.query.date as string) || getBangkokDateString();
+  const info = await workdayInfo(dateStr);
+  res.json({ date: dateStr, ...info });
 }
 
 export async function listReports(req: Request, res: Response) {
