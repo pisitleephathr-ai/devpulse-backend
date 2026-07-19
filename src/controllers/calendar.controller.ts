@@ -30,18 +30,19 @@ export async function listEvents(req: Request, res: Response) {
 
   const isManager = isTeamManager(req);
 
-  const [events, tasks, reports, leaves, holidays, setting] = await Promise.all([
+  const [events, tasks, leaves, holidays, setting] = await Promise.all([
     prisma.calendarEvent.findMany({
       where: { startDate: { lte: endInclusive }, endDate: { gte: start } },
       orderBy: { startDate: "asc" },
     }),
+    // Tasks span createdAt → dueDate (a work window), so include any task whose
+    // span overlaps the month. Tasks without a due date are omitted.
     prisma.task.findMany({
-      where: { dueDate: { gte: start, lt: endExclusive } },
+      where: {
+        dueDate: { not: null, gte: start },
+        createdAt: { lt: endExclusive },
+      },
       include: { project: { select: projectSelect }, assignee: { select: userMiniSelect } },
-    }),
-    prisma.dailyReport.findMany({
-      where: { date: { gte: start, lt: endExclusive } },
-      include: { project: { select: projectSelect }, author: { select: userMiniSelect } },
     }),
     prisma.leaveRequest.findMany({
       where: {
@@ -70,27 +71,23 @@ export async function listEvents(req: Request, res: Response) {
       endDate: e.endDate,
       entityId: e.id,
     })),
-    ...tasks.map((t) => ({
-      id: `task_${t.id}`,
-      type: "TASK" as const,
-      title: t.title,
-      date: t.dueDate,
-      project: t.project,
-      user: t.assignee,
-      status: t.status,
-      priority: t.priority,
-      entityId: t.id,
-    })),
-    ...reports.map((r) => ({
-      id: `report_${r.id}`,
-      type: "REPORT" as const,
-      title: r.author.name,
-      date: r.date,
-      project: r.project,
-      user: r.author,
-      status: r.status,
-      entityId: r.id,
-    })),
+    ...tasks.map((t) => {
+      // Bar from creation to due date (guard against a due date before creation).
+      const dstart = t.createdAt <= t.dueDate! ? t.createdAt : t.dueDate!;
+      const dend = t.createdAt <= t.dueDate! ? t.dueDate! : t.createdAt;
+      return {
+        id: `task_${t.id}`,
+        type: "TASK" as const,
+        title: t.title,
+        date: dstart,
+        endDate: dend,
+        project: t.project,
+        user: t.assignee,
+        status: t.status,
+        priority: t.priority,
+        entityId: t.id,
+      };
+    }),
     ...leaves.map((l) => ({
       id: `leave_${l.id}`,
       type: "LEAVE" as const,
