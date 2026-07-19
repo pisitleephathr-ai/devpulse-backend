@@ -602,6 +602,10 @@ model TeamSetting {
   /// Mondays at lineWeeklyPerformanceTime.
   lineWeeklyPerformance     Boolean  @default(false)
   lineWeeklyPerformanceTime String   @default("09:00")
+  /// weekly highlight reel ("what the team shipped this week") → LINE group,
+  /// sent on Mondays at lineWeeklyHighlightTime.
+  lineWeeklyHighlight       Boolean  @default(false)
+  lineWeeklyHighlightTime   String   @default("09:00")
   /// personal morning digest DM (overdue + due today/tomorrow) to each linked
   /// user, sent on working days at lineDailyDigestTime.
   lineDailyDigest           Boolean  @default(false)
@@ -611,6 +615,7 @@ model TeamSetting {
   lineLeaveSummaryLastRun   String?
   lineReportSummaryLastRun  String?
   lineWeeklyPerformanceLastRun String?
+  lineWeeklyHighlightLastRun String?
   updatedAt          DateTime @updatedAt
 }
 
