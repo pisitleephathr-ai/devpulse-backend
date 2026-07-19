@@ -112,6 +112,8 @@ model User {
   uploadedAttachments TaskAttachment[] @relation("AttachmentUploader")
   uploadIntents  UploadIntent[]
   lineLinkCode   LineLinkCode?
+  actionItemsAssigned ActionItem[] @relation("ActionItemAssignee")
+  actionItemsCreated  ActionItem[] @relation("ActionItemCreatedBy")
 
   @@index([role])
   @@index([roleId])
@@ -608,4 +610,31 @@ model TeamSetting {
   lineReportSummaryLastRun  String?
   lineWeeklyPerformanceLastRun String?
   updatedAt          DateTime @updatedAt
+}
+
+/// Action items raised during a daily standup — tracked to completion and
+/// carried forward (open ones) into later standups so nothing is forgotten.
+model ActionItem {
+  id          String           @id @default(cuid())
+  text        String
+  status      ActionItemStatus @default(OPEN)
+  /// The standup Bangkok day this item was raised on.
+  date        DateTime
+  dueDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  assignee    User?   @relation("ActionItemAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assigneeId  String?
+  createdBy   User    @relation("ActionItemCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  createdById String
+
+  @@index([status])
+  @@index([date])
+}
+
+enum ActionItemStatus {
+  OPEN
+  DONE
 }
