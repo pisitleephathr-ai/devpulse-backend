@@ -218,6 +218,12 @@ export async function pushToUsersWithPref(
   if (!ids.length) return;
   const column = notifColumn(key);
   try {
+    // Team-wide master switch: when off, no personal DMs at all.
+    const setting = await prisma.teamSetting.findFirst({
+      select: { linePersonalEnabled: true },
+    });
+    if (setting && setting.linePersonalEnabled === false) return;
+
     const users = await prisma.user.findMany({
       where: { id: { in: ids }, lineUserId: { not: null } },
       select: {

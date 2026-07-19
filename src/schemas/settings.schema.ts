@@ -14,6 +14,7 @@ export const updateSettingsSchema = z
     notifyLeaveApproval: z.boolean(),
     notifyTaskDue: z.boolean(),
     // LINE OA notification prefs
+    linePersonalEnabled: z.boolean(),
     lineNotifyNewTask: z.boolean(),
     lineNotifyStatuses: z.array(
       z.enum(["TODO", "IN_PROGRESS", "REVIEW", "READY_TO_TEST", "DONE"])

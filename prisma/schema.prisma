@@ -537,6 +537,10 @@ model TeamSetting {
   /// LINE group id the OA bot is in, auto-captured from webhook events. Task
   /// notifications are pushed here when LINE is enabled. Null = not linked yet.
   lineGroupId               String?
+  /// master switch for PERSONAL LINE DMs (per-user notifications). When false,
+  /// no personal DM is sent regardless of each user's own prefs. Group summaries
+  /// / cards are unaffected. Default on.
+  linePersonalEnabled       Boolean  @default(true)
   /// LINE OA notification prefs — which task events fan out to the group.
   lineNotifyNewTask         Boolean  @default(true)
   /// task statuses that trigger a LINE card when moved to them

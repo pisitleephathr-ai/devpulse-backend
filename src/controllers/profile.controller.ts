@@ -77,22 +77,27 @@ export async function changePassword(req: Request, res: Response) {
 
 /** GET /api/profile/line — the current user's personal-LINE link status + prefs. */
 export async function getLineStatus(req: Request, res: Response) {
-  const user = await prisma.user.findUnique({
-    where: { id: req.user!.id },
-    select: {
-      lineUserId: true,
-      lineLinkedAt: true,
-      lineNotifyTaskAssigned: true,
-      lineNotifyLeaveDecision: true,
-      lineNotifyLeaveRequest: true,
-      lineNotifyReportReminder: true,
-      roleRef: { select: { lineNotifications: true } },
-    },
-  });
+  const [user, setting] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: {
+        lineUserId: true,
+        lineLinkedAt: true,
+        lineNotifyTaskAssigned: true,
+        lineNotifyLeaveDecision: true,
+        lineNotifyLeaveRequest: true,
+        lineNotifyReportReminder: true,
+        roleRef: { select: { lineNotifications: true } },
+      },
+    }),
+    prisma.teamSetting.findFirst({ select: { linePersonalEnabled: true } }),
+  ]);
   res.json({
     linked: !!user?.lineUserId,
     linkedAt: user?.lineLinkedAt ?? null,
     lineEnabled: env.LINE_ENABLED,
+    // team-wide master switch for personal DMs (admin-controlled in Settings)
+    personalEnabled: setting?.linePersonalEnabled ?? true,
     addFriendUrl: env.LINE_ADD_FRIEND_URL ?? null,
     // Only the types this user's role allows are shown as toggles.
     available: allowedNotifKeys(user?.roleRef?.lineNotifications),
