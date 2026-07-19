@@ -442,3 +442,125 @@ export async function velocity(req: Request, res: Response) {
     },
   });
 }
+
+/**
+ * GET /api/dashboard/flow?weeks=8 — work-flow health:
+ *  - aging: how long each OPEN task has sat in its current status (derived from
+ *    the latest task.status activity, falling back to createdAt), bucketed, plus
+ *    the "stalest" open tasks; and
+ *  - flow: intake vs throughput per Bangkok week (tasks created vs completed) —
+ *    a practical backlog burn view when there is no sprint concept.
+ */
+export async function flow(req: Request, res: Response) {
+  const weeks = Math.min(12, Math.max(1, Number(req.query.weeks) || 8));
+  const now = new Date();
+
+  const todayStartUtc = startOfBangkokDayUtc(getBangkokDateString());
+  const sinceMonday = (getBangkokWeekday() + 6) % 7;
+  const currentMondayUtc = new Date(todayStartUtc.getTime() - sinceMonday * DAY_MS);
+  const startUtc = new Date(currentMondayUtc.getTime() - (weeks - 1) * WEEK_MS);
+
+  const [openTasks, createdRows, completedRows, openNow] = await Promise.all([
+    prisma.task.findMany({
+      where: { status: { not: "DONE" } },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        createdAt: true,
+        project: { select: { code: true, color: true, name: true } },
+        assignees: {
+          select: { user: { select: { id: true, name: true, avatarKey: true } } },
+        },
+      },
+    }),
+    prisma.task.findMany({
+      where: { createdAt: { gte: startUtc } },
+      select: { createdAt: true },
+    }),
+    prisma.task.findMany({
+      where: { status: "DONE", completedAt: { gte: startUtc } },
+      select: { completedAt: true },
+    }),
+    prisma.task.count({ where: { status: { not: "DONE" } } }),
+  ]);
+
+  // "Entered current status" per open task = its most recent task.status log.
+  const openIds = openTasks.map((t) => t.id);
+  const logs = openIds.length
+    ? await prisma.activityLog.findMany({
+        where: { action: "task.status", entityId: { in: openIds } },
+        select: { entityId: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+  const enteredAt = new Map<string, Date>();
+  for (const l of logs) {
+    if (l.entityId && !enteredAt.has(l.entityId)) enteredAt.set(l.entityId, l.createdAt);
+  }
+
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+  const aged = openTasks.map((t) => {
+    const since = enteredAt.get(t.id) ?? t.createdAt;
+    const ageDays = Math.max(0, (now.getTime() - since.getTime()) / DAY_MS);
+    return { t, ageDays };
+  });
+
+  // Age buckets (days in current status).
+  const BUCKETS = [
+    { key: "d0", label: "< 1 วัน", max: 1 },
+    { key: "d1", label: "1–3 วัน", max: 3 },
+    { key: "d3", label: "3–7 วัน", max: 7 },
+    { key: "d7", label: "7–14 วัน", max: 14 },
+    { key: "d14", label: "≥ 14 วัน", max: Infinity },
+  ];
+  const buckets = BUCKETS.map((b) => ({ key: b.key, label: b.label, count: 0 }));
+  for (const a of aged) {
+    const i = BUCKETS.findIndex((b) => a.ageDays < b.max);
+    buckets[i === -1 ? BUCKETS.length - 1 : i].count += 1;
+  }
+  const avgAge = aged.length
+    ? round1(aged.reduce((s, a) => s + a.ageDays, 0) / aged.length)
+    : 0;
+
+  const stalest = [...aged]
+    .sort((a, b) => b.ageDays - a.ageDays)
+    .slice(0, 8)
+    .map((a) => ({
+      id: a.t.id,
+      title: a.t.title,
+      status: a.t.status,
+      ageDays: round1(a.ageDays),
+      project: a.t.project,
+      assignees: a.t.assignees.map((x) => x.user),
+    }));
+
+  // Weekly intake vs throughput.
+  const series: { weekStart: string; created: number; completed: number }[] = [];
+  for (let i = 0; i < weeks; i++) {
+    const wStart = new Date(startUtc.getTime() + i * WEEK_MS);
+    const wEnd = new Date(wStart.getTime() + WEEK_MS);
+    const created = createdRows.filter(
+      (r) => r.createdAt >= wStart && r.createdAt < wEnd
+    ).length;
+    const completed = completedRows.filter(
+      (r) => r.completedAt && r.completedAt >= wStart && r.completedAt < wEnd
+    ).length;
+    series.push({ weekStart: getBangkokDateString(wStart), created, completed });
+  }
+  const totalCreated = series.reduce((s, w) => s + w.created, 0);
+  const totalDone = series.reduce((s, w) => s + w.completed, 0);
+
+  res.json({
+    weeks,
+    aging: { buckets, avgDays: avgAge, openTotal: openTasks.length, stalest },
+    flow: {
+      series,
+      openNow,
+      totalCreated,
+      totalCompleted: totalDone,
+      // net change in backlog over the window (created − completed)
+      net: totalCreated - totalDone,
+    },
+  });
+}
