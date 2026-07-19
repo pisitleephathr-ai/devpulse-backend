@@ -45,3 +45,22 @@ export async function markAllRead(req: Request, res: Response) {
   });
   res.json({ message: "อ่านทั้งหมดแล้ว" });
 }
+
+/** Delete a single notification (must belong to the current user). */
+export async function deleteNotification(req: Request, res: Response) {
+  const existing = await prisma.notification.findUnique({
+    where: { id: req.params.id },
+    select: { userId: true },
+  });
+  if (!existing || existing.userId !== req.user!.id) {
+    throw new AppError(404, "ไม่พบการแจ้งเตือน");
+  }
+  await prisma.notification.delete({ where: { id: req.params.id } });
+  res.status(204).send();
+}
+
+/** Delete all of the current user's notifications. */
+export async function clearNotifications(req: Request, res: Response) {
+  await prisma.notification.deleteMany({ where: { userId: req.user!.id } });
+  res.status(204).send();
+}

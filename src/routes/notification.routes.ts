@@ -13,5 +13,8 @@ router.get("/", asyncHandler(ctrl.listNotifications));
 router.get("/unread-count", asyncHandler(ctrl.unreadCount));
 router.patch("/read-all", asyncHandler(ctrl.markAllRead));
 router.patch("/:id/read", validate({ params: idParam }), asyncHandler(ctrl.markRead));
+// Delete all must precede "/:id" so "clear"-style calls aren't captured as an id.
+router.delete("/", asyncHandler(ctrl.clearNotifications));
+router.delete("/:id", validate({ params: idParam }), asyncHandler(ctrl.deleteNotification));
 
 export default router;
