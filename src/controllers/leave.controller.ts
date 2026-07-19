@@ -10,7 +10,7 @@ import {
   appBaseUrl,
   getLinePrefs,
 } from "../lib/line";
-import { leaveFlex } from "../lib/line-messages";
+import { leaveFlex, leaveApprovalFlex } from "../lib/line-messages";
 import { isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
 
@@ -186,11 +186,11 @@ export async function createLeave(req: Request, res: Response) {
       entityId: leave.id,
     });
     await pushLeaveCard("PENDING", leave);
-    // DM approvers on their personal LINE (per-user pref + role allow).
+    // DM approvers on their personal LINE (per-user pref + role allow). The card
+    // carries อนุมัติ/ปฏิเสธ postback buttons so they can decide from LINE.
     if (recipients.length) {
       const base = appBaseUrl();
-      const card = leaveFlex(
-        "PENDING",
+      const card = leaveApprovalFlex(
         {
           userName: leave.user.name,
           type: leave.type,
@@ -201,6 +201,7 @@ export async function createLeave(req: Request, res: Response) {
           reason: leave.reason,
           actorName: null,
         },
+        leave.id,
         base ? `${base}/leaves` : undefined
       );
       await pushFlexToUsersWithPref(
@@ -217,30 +218,35 @@ export async function createLeave(req: Request, res: Response) {
   res.status(201).json({ leave });
 }
 
-/** Shared approve/reject handler. */
-async function decide(req: Request, res: Response, status: LeaveStatus) {
+/**
+ * Approve/reject a leave request as `reviewerId`. Shared by the HTTP route and
+ * the LINE postback handler. Throws AppError(404) if missing, AppError(409) if
+ * already decided. Post-commit side effects (notify + LINE cards) never throw.
+ */
+export async function applyLeaveDecision(
+  leaveId: string,
+  reviewerId: string,
+  status: LeaveStatus
+) {
   const existing = await prisma.leaveRequest.findUnique({
-    where: { id: req.params.id },
+    where: { id: leaveId },
     include: { user: { select: { name: true } } },
   });
   if (!existing) throw new AppError(404, "ไม่พบคำขอลา");
   if (existing.status !== "PENDING") {
     throw new AppError(409, "คำขอนี้ถูกดำเนินการไปแล้ว");
   }
-  // Anyone reaching this endpoint already holds leave-approval rights (route is
-  // gated by isManagerOrAdmin / TEAM_MANAGE), so approving one's OWN leave is
-  // allowed too.
 
   const verb = status === "APPROVED" ? "อนุมัติ" : "ปฏิเสธ";
   const leave = await prisma.$transaction(async (tx) => {
     const updated = await tx.leaveRequest.update({
-      where: { id: req.params.id },
-      data: { status, reviewedById: req.user!.id },
+      where: { id: leaveId },
+      data: { status, reviewedById: reviewerId },
       include,
     });
     await logActivity(
       {
-        userId: req.user!.id,
+        userId: reviewerId,
         action: status === "APPROVED" ? "leave.approve" : "leave.reject",
         message: `${verb}คำขอ${typeLabel(updated.type)}ของ ${existing.user.name}`,
         entityType: "leave",
@@ -251,10 +257,10 @@ async function decide(req: Request, res: Response, status: LeaveStatus) {
     return updated;
   });
 
-  // Side effects run AFTER commit and must never fail the request.
+  // Side effects run AFTER commit and must never fail the caller.
   try {
     // Notify the requester of the decision (unless they reviewed their own).
-    if (leave.userId !== req.user!.id) {
+    if (leave.userId !== reviewerId) {
       await notify({
         userId: leave.userId,
         type: status === "APPROVED" ? "leave.approved" : "leave.rejected",
@@ -292,6 +298,17 @@ async function decide(req: Request, res: Response, status: LeaveStatus) {
     console.warn("[leave.decide] post-commit side-effect failed:", err);
   }
 
+  return leave;
+}
+
+/** Whether a user holds leave-approval rights (same set that gets notified). */
+export async function canApproveLeave(userId: string): Promise<boolean> {
+  return (await managerIds()).includes(userId);
+}
+
+/** HTTP wrapper — the route is gated by isManagerOrAdmin / TEAM_MANAGE. */
+async function decide(req: Request, res: Response, status: LeaveStatus) {
+  const leave = await applyLeaveDecision(req.params.id, req.user!.id, status);
   res.json({ leave });
 }
 

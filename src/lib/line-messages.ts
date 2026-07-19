@@ -462,6 +462,99 @@ export function leaveFlex(
   return { altText: `${meta.header}: ${t.userName} (${leaveTypeLabel(t.type)})`, contents };
 }
 
+/**
+ * Like the PENDING leaveFlex, but with in-card อนุมัติ/ปฏิเสธ postback buttons
+ * (`cmd=leave_approve&id=…` / `cmd=leave_reject&id=…`). DM'd to approvers so they
+ * can decide right from LINE. The webhook verifies the tapper is an approver.
+ */
+export function leaveApprovalFlex(
+  t: LeaveCardInput,
+  leaveId: string,
+  url?: string
+): { altText: string; contents: LineMessage } {
+  const meta = LEAVE_DECISION.PENDING;
+  const body: LineMessage[] = [
+    titleLine(t.userName),
+    row("ประเภท", leaveTypeLabel(t.type)),
+    row("ช่วงวันที่", dateRange(t.startDate, t.endDate)),
+    row("จำนวน", leaveDaysLabel(t.days, t.halfDayPeriod)),
+    row("สถานะ", meta.statusLabel, meta.statusColor),
+  ];
+  if (t.reason && t.reason.trim()) body.push(row("เหตุผล", t.reason.trim()));
+
+  const footerButtons: LineMessage[] = [
+    {
+      type: "box",
+      layout: "horizontal",
+      spacing: "sm",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          color: "#16a34a",
+          height: "sm",
+          action: {
+            type: "postback",
+            label: "✅ อนุมัติ",
+            data: `cmd=leave_approve&id=${leaveId}`,
+            displayText: "อนุมัติคำขอลา",
+          },
+        },
+        {
+          type: "button",
+          style: "primary",
+          color: "#dc2626",
+          height: "sm",
+          action: {
+            type: "postback",
+            label: "❌ ปฏิเสธ",
+            data: `cmd=leave_reject&id=${leaveId}`,
+            displayText: "ปฏิเสธคำขอลา",
+          },
+        },
+      ],
+    },
+  ];
+  if (url) {
+    footerButtons.push({
+      type: "button",
+      style: "link",
+      height: "sm",
+      action: { type: "uri", label: "เปิดดูในเว็บ ↗", uri: url },
+    });
+  }
+
+  const contents: LineMessage = {
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box",
+      layout: "vertical",
+      backgroundColor: meta.color,
+      paddingAll: "16px",
+      contents: [
+        { type: "text", text: meta.header, color: "#ffffff", size: "sm", weight: "bold" },
+      ],
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      paddingAll: "16px",
+      contents: body,
+    },
+    footer: {
+      type: "box",
+      layout: "vertical",
+      spacing: "sm",
+      paddingAll: "12px",
+      paddingTop: "none",
+      contents: footerButtons,
+    },
+  };
+  return { altText: `ขออนุมัติลา: ${t.userName} (${leaveTypeLabel(t.type)})`, contents };
+}
+
 /** One "person on leave" line: bold name + muted "type · duration". */
 function leaveEntryLine(name: string, detail: string): LineMessage {
   return {
