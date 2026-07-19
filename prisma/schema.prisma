@@ -95,6 +95,8 @@ model User {
   lineNotifyTaskStatus     Boolean @default(true)
   /// DM when you're @-mentioned in a task comment
   lineNotifyMention        Boolean @default(true)
+  /// morning DM digest: overdue + due today + due tomorrow
+  lineNotifyDailyDigest    Boolean @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -594,6 +596,11 @@ model TeamSetting {
   /// Mondays at lineWeeklyPerformanceTime.
   lineWeeklyPerformance     Boolean  @default(false)
   lineWeeklyPerformanceTime String   @default("09:00")
+  /// personal morning digest DM (overdue + due today/tomorrow) to each linked
+  /// user, sent on working days at lineDailyDigestTime.
+  lineDailyDigest           Boolean  @default(false)
+  lineDailyDigestTime       String   @default("08:30")
+  lineDailyDigestLastRun    String?
   /// dedup guards — YYYY-MM-DD (Bangkok) each daily summary last fired. Internal.
   lineLeaveSummaryLastRun   String?
   lineReportSummaryLastRun  String?

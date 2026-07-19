@@ -18,6 +18,7 @@ export const LINE_NOTIF_TYPES = [
   { key: "leaveDecision", column: "lineNotifyLeaveDecision", label: "ผลอนุมัติการลา (ของฉัน)" },
   { key: "leaveRequest", column: "lineNotifyLeaveRequest", label: "คำขอลาใหม่ (สำหรับผู้อนุมัติ)" },
   { key: "reportReminder", column: "lineNotifyReportReminder", label: "เตือนส่งรายงานประจำวัน" },
+  { key: "dailyDigest", column: "lineNotifyDailyDigest", label: "สรุปงานเช้า (ครบกำหนด/เลยกำหนด)" },
 ] as const;
 
 export type LineNotifKey = (typeof LINE_NOTIF_TYPES)[number]["key"];

@@ -21,6 +21,95 @@ const STATUS: Record<TaskStatus, { label: string; color: string }> = {
   DONE: { label: "เสร็จแล้ว", color: "#16a34a" },
 };
 
+/** Public status label/color lookup (for callers building task rows). */
+export function statusMeta(s: TaskStatus): { label: string; color: string } {
+  return STATUS[s];
+}
+
+export type TaskRow = {
+  title: string;
+  status: TaskStatus;
+  /** short due-date label, or null */
+  due?: string | null;
+  overdue?: boolean;
+  /** deep link opened when the row is tapped */
+  url?: string;
+};
+
+/** One tappable task row inside a list card. */
+function taskRowBox(row: TaskRow): LineMessage {
+  const st = STATUS[row.status];
+  const meta: LineMessage[] = [
+    { type: "text", text: st.label, size: "xs", color: st.color, flex: 0 },
+  ];
+  if (row.due) {
+    meta.push({
+      type: "text",
+      text: `· ${row.overdue ? "เลยกำหนด " : "ครบ "}${row.due}`,
+      size: "xs",
+      color: row.overdue ? "#dc2626" : MUTED,
+      flex: 0,
+      margin: "sm",
+      wrap: true,
+    });
+  }
+  const box: LineMessage = {
+    type: "box",
+    layout: "vertical",
+    spacing: "xs",
+    margin: "md",
+    paddingAll: "8px",
+    cornerRadius: "8px",
+    backgroundColor: "#f8fafc",
+    contents: [
+      {
+        type: "text",
+        text: `${row.overdue ? "🔴 " : ""}${row.title}`,
+        size: "sm",
+        weight: "bold",
+        color: INK,
+        wrap: true,
+      },
+      { type: "box", layout: "baseline", spacing: "sm", contents: meta },
+    ],
+  };
+  if (row.url) box.action = { type: "uri", label: "เปิดงาน", uri: row.url };
+  return box;
+}
+
+/**
+ * A tappable task-list card (used by the bot commands + personal digest). Rows
+ * deep-link into the board. Caps the visible rows and notes the remainder.
+ */
+export function taskListFlex(
+  headerLabel: string,
+  headerColor: string,
+  subtitle: string,
+  rows: TaskRow[],
+  opts: { footerUrl?: string; footerLabel?: string; max?: number } = {}
+): { altText: string; contents: LineMessage } {
+  const max = opts.max ?? 10;
+  const body: LineMessage[] = [
+    { type: "text", text: subtitle, color: MUTED, size: "xs" },
+  ];
+  for (const r of rows.slice(0, max)) body.push(taskRowBox(r));
+  if (rows.length > max) {
+    body.push({
+      type: "text",
+      text: `…และอีก ${rows.length - max} งาน`,
+      color: MUTED,
+      size: "xs",
+      margin: "md",
+    });
+  }
+  const contents = shell(headerLabel, body, {
+    url: opts.footerUrl,
+    headerColor,
+    buttonLabel: opts.footerLabel ?? "เปิดในเว็บ ↗",
+  });
+  return { altText: `${headerLabel} (${rows.length})`, contents };
+}
+
 /** Short Thai date in Bangkok tz with Buddhist year, e.g. "15 ก.ค. 2569". */
 function thaiDate(date: Date | null): string {
   if (!date) return "ไม่กำหนด";

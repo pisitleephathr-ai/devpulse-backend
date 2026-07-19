@@ -234,6 +234,7 @@ export async function pushToUsersWithPref(
         lineNotifyLeaveDecision: true,
         lineNotifyLeaveRequest: true,
         lineNotifyReportReminder: true,
+        lineNotifyDailyDigest: true,
         roleRef: { select: { lineNotifications: true } },
       },
     });

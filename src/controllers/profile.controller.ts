@@ -89,6 +89,7 @@ export async function getLineStatus(req: Request, res: Response) {
         lineNotifyLeaveDecision: true,
         lineNotifyLeaveRequest: true,
         lineNotifyReportReminder: true,
+        lineNotifyDailyDigest: true,
         roleRef: { select: { lineNotifications: true } },
       },
     }),
@@ -110,6 +111,7 @@ export async function getLineStatus(req: Request, res: Response) {
       leaveDecision: user?.lineNotifyLeaveDecision ?? true,
       leaveRequest: user?.lineNotifyLeaveRequest ?? true,
       reportReminder: user?.lineNotifyReportReminder ?? true,
+      dailyDigest: user?.lineNotifyDailyDigest ?? true,
     },
   });
 }
@@ -138,6 +140,9 @@ export async function updateLinePrefs(req: Request, res: Response) {
       ...(body.reportReminder !== undefined && {
         lineNotifyReportReminder: body.reportReminder,
       }),
+      ...(body.dailyDigest !== undefined && {
+        lineNotifyDailyDigest: body.dailyDigest,
+      }),
     },
     select: {
       lineNotifyTaskAssigned: true,
@@ -146,6 +151,7 @@ export async function updateLinePrefs(req: Request, res: Response) {
       lineNotifyLeaveDecision: true,
       lineNotifyLeaveRequest: true,
       lineNotifyReportReminder: true,
+      lineNotifyDailyDigest: true,
     },
   });
   res.json({
@@ -156,6 +162,7 @@ export async function updateLinePrefs(req: Request, res: Response) {
       leaveDecision: user.lineNotifyLeaveDecision,
       leaveRequest: user.lineNotifyLeaveRequest,
       reportReminder: user.lineNotifyReportReminder,
+      dailyDigest: user.lineNotifyDailyDigest,
     },
   });
 }

@@ -4,6 +4,8 @@ import {
   matchTextCommand,
   isBotCommand,
   BOT_COMMANDS,
+  parseCloseCommand,
+  parseMemberCommand,
 } from "../src/lib/line-commands";
 
 // matchTextCommand is pure keyword matching; the command handlers hit the DB and
@@ -36,6 +38,22 @@ test("matchTextCommand: specificity — overdue/due beat the generic 'งาน'
 test("matchTextCommand: unknown text returns null", () => {
   assert.equal(matchTextCommand("xyz random"), null);
   assert.equal(matchTextCommand("   "), null);
+});
+
+test("parseCloseCommand: extracts the task name after เสร็จ/ปิดงาน/done", () => {
+  assert.equal(parseCloseCommand("เสร็จ ทำหน้า login"), "ทำหน้า login");
+  assert.equal(parseCloseCommand("ปิดงาน แก้บั๊ก"), "แก้บั๊ก");
+  assert.equal(parseCloseCommand("done fix header"), "fix header");
+  assert.equal(parseCloseCommand("เสร็จแล้ว"), null); // no task name
+  assert.equal(parseCloseCommand("งานของฉัน"), null);
+});
+
+test("parseMemberCommand: extracts a member name, ignores self", () => {
+  assert.equal(parseMemberCommand("งานของสมชาย"), "สมชาย");
+  assert.equal(parseMemberCommand("งานของ James"), "James");
+  assert.equal(parseMemberCommand("งานของฉัน"), null); // self → my_tasks
+  assert.equal(parseMemberCommand("งานของ ผม"), null);
+  assert.equal(parseMemberCommand("งานเลยกำหนด"), null);
 });
 
 test("every command matchTextCommand can return is a valid BotCommand", () => {

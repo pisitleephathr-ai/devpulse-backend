@@ -4,8 +4,11 @@ import {
   appBaseUrl,
   pushFlexToLineGroup,
   pushToUsersWithPref,
+  pushMessagesToUser,
   lineDeliveryStatus,
 } from "./line";
+import { roleAllowsNotif } from "./line-notif";
+import { buildDailyDigest } from "./line-commands";
 import {
   getBangkokDateString,
   getBangkokHM,
@@ -186,22 +189,60 @@ async function sendPerformanceSummary(): Promise<SendResult> {
 }
 
 /**
+ * Personal morning digest: DM each linked user (who allows it) their overdue +
+ * due-today + due-tomorrow tasks. Skips users with nothing due. Respects the
+ * team master switch, each role's allow-list, and the user's own pref.
+ */
+async function sendPersonalDigests(): Promise<SendResult> {
+  const setting = await prisma.teamSetting.findFirst({
+    select: { linePersonalEnabled: true },
+  });
+  if (setting && setting.linePersonalEnabled === false) {
+    return { pushed: false, reason: "แจ้งเตือนส่วนตัวถูกปิดไว้" };
+  }
+  const users = await prisma.user.findMany({
+    where: { active: true, lineUserId: { not: null }, lineNotifyDailyDigest: true },
+    select: {
+      id: true,
+      name: true,
+      roleRef: { select: { lineNotifications: true } },
+    },
+  });
+  let sent = 0;
+  for (const u of users) {
+    if (!roleAllowsNotif(u.roleRef?.lineNotifications, "dailyDigest")) continue;
+    const messages = await buildDailyDigest(u.id, u.name);
+    if (!messages) continue;
+    await pushMessagesToUser(u.id, messages);
+    sent += 1;
+  }
+  return sent > 0
+    ? { pushed: true }
+    : { pushed: false, reason: "ไม่มีใครมีงานครบกำหนด/เลยกำหนดตอนนี้" };
+}
+
+/**
  * Manually fire a summary now, bypassing the schedule/last-run/working-day
  * gates (used by the "send test" button). Still respects LINE config + group
  * connection so the caller gets a clear reason when delivery isn't possible.
  */
 export async function triggerSummary(
-  kind: "leave" | "report" | "performance"
+  kind: "leave" | "report" | "performance" | "digest"
 ): Promise<{ sent: boolean; reason?: string }> {
-  const status = await lineDeliveryStatus();
-  if (!status.ready) return { sent: false, reason: status.reason };
+  // Group summaries need a linked group; the personal digest is a DM (no group).
+  if (kind !== "digest") {
+    const status = await lineDeliveryStatus();
+    if (!status.ready) return { sent: false, reason: status.reason };
+  }
   const today = bangkokToday();
   const r =
     kind === "leave"
       ? await sendLeaveSummary(today)
       : kind === "report"
         ? await sendReportSummary(today)
-        : await sendPerformanceSummary();
+        : kind === "performance"
+          ? await sendPerformanceSummary()
+          : await sendPersonalDigests();
   return { sent: r.pushed, reason: r.reason };
 }
 
@@ -245,7 +286,12 @@ async function tick(): Promise<void> {
     bangkokWeekday() === 1 &&
     setting.lineWeeklyPerformanceLastRun !== today &&
     now >= hm(setting.lineWeeklyPerformanceTime, "09:00");
-  if (!leaveDue && !reportDue && !performanceDue) return;
+  // Personal morning digest (DM to each linked user).
+  const digestDue =
+    setting.lineDailyDigest &&
+    setting.lineDailyDigestLastRun !== today &&
+    now >= hm(setting.lineDailyDigestTime, "08:30");
+  if (!leaveDue && !reportDue && !performanceDue && !digestDue) return;
 
   // A company holiday is a day off — send nothing.
   if (await isCompanyHoliday(today)) return;
@@ -277,6 +323,16 @@ async function tick(): Promise<void> {
     });
     await sendPerformanceSummary().catch((e) =>
       console.warn("[scheduler] performance summary failed:", e)
+    );
+  }
+
+  if (digestDue) {
+    await prisma.teamSetting.update({
+      where: { id: setting.id },
+      data: { lineDailyDigestLastRun: today },
+    });
+    await sendPersonalDigests().catch((e) =>
+      console.warn("[scheduler] personal digest failed:", e)
     );
   }
 }

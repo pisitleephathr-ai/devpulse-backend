@@ -8,6 +8,10 @@ import {
   handleBotCommand,
   isBotCommand,
   matchTextCommand,
+  parseCloseCommand,
+  parseMemberCommand,
+  closeTaskByName,
+  memberTasks,
 } from "../lib/line-commands";
 
 // Minimal fields required to create the singleton if it doesn't exist yet.
@@ -107,8 +111,15 @@ async function handleUserEvent(ev: {
       select: { id: true },
     });
     if (already) {
-      const cmd = matchTextCommand(text) ?? "help";
-      const messages = await handleBotCommand(cmd, lineUserId);
+      // Interactive commands first ("เสร็จ <งาน>", "งานของ <ชื่อ>"), then keywords.
+      const close = parseCloseCommand(text);
+      const member = parseMemberCommand(text);
+      const messages =
+        close !== null
+          ? await closeTaskByName(lineUserId, close)
+          : member
+            ? await memberTasks(lineUserId, member)
+            : await handleBotCommand(matchTextCommand(text) ?? "help", lineUserId);
       if (messages.length) await replyToLine(ev.replyToken, messages);
     } else {
       await replyTextToLine(

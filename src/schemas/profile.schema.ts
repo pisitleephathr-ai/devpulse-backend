@@ -29,6 +29,7 @@ export const linePrefsSchema = z
     leaveDecision: z.boolean().optional(),
     leaveRequest: z.boolean().optional(),
     reportReminder: z.boolean().optional(),
+    dailyDigest: z.boolean().optional(),
   })
   .refine((d) => Object.keys(d).length > 0, {
     message: "ต้องระบุการตั้งค่าอย่างน้อยหนึ่งรายการ",
