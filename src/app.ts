@@ -19,6 +19,7 @@ import standupRoutes from "./routes/standup.routes";
 import calendarRoutes from "./routes/calendar.routes";
 import settingsRoutes from "./routes/settings.routes";
 import cronRoutes from "./routes/cron.routes";
+import uploadRoutes from "./routes/uploads.routes";
 import { lineWebhook } from "./controllers/line.controller";
 import { errorHandler, notFound } from "./middleware/error";
 
@@ -68,6 +69,7 @@ app.use("/api/search", searchRoutes);
 app.use("/api/standup", standupRoutes);
 app.use("/api/calendar", calendarRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/uploads", uploadRoutes);
 // Public (secret-gated) — no user session; for an external scheduler.
 app.use("/api/cron", cronRoutes);
 

@@ -2,8 +2,10 @@ import { Router } from "express";
 import * as ctrl from "../controllers/task.controller";
 import * as comments from "../controllers/comment.controller";
 import * as checklist from "../controllers/checklist.controller";
+import * as attachments from "../controllers/attachment.controller";
 import { authenticate } from "../middleware/auth";
 import { isManagerOrAdmin } from "../middleware/authorize";
+import { attachmentLimiter } from "../middleware/rateLimit";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/error";
 import {
@@ -19,6 +21,12 @@ import {
   createChecklistItemSchema,
   updateChecklistItemSchema,
 } from "../schemas/checklist.schema";
+import {
+  signatureSchema,
+  completeSchema,
+  taskIdParam,
+  attachmentParams,
+} from "../schemas/upload.schema";
 import { idParam } from "../schemas/common.schema";
 
 const router = Router();
@@ -49,13 +57,41 @@ router.patch(
 router.post("/:id/links", validate({ body: linkSchema }), asyncHandler(ctrl.addLink));
 router.delete("/:taskId/links/:linkId", asyncHandler(ctrl.deleteLink));
 
-// Attachments (URL-only metadata)
+// Attachments — legacy URL metadata (kept for backward compatibility).
 router.post(
   "/:id/attachments",
   validate({ body: attachmentSchema }),
   asyncHandler(ctrl.addAttachment)
 );
-router.delete("/:taskId/attachments/:attachmentId", asyncHandler(ctrl.deleteAttachment));
+
+// Attachments — Cloudinary signed direct upload.
+// Live usage vs. limits for a task.
+router.get(
+  "/:taskId/attachments/usage",
+  validate({ params: taskIdParam }),
+  asyncHandler(attachments.getTaskAttachmentUsage)
+);
+// Request signed upload params (rate-limited per user).
+router.post(
+  "/:taskId/attachments/signature",
+  attachmentLimiter,
+  validate({ params: taskIdParam, body: signatureSchema }),
+  asyncHandler(attachments.createSignature)
+);
+// Confirm + persist a finished Cloudinary upload (rate-limited per user).
+router.post(
+  "/:taskId/attachments/complete",
+  attachmentLimiter,
+  validate({ params: taskIdParam, body: completeSchema }),
+  asyncHandler(attachments.completeUpload)
+);
+// Delete an attachment (URL or Cloudinary). Handles the remote asset + authz.
+router.delete(
+  "/:taskId/attachments/:attachmentId",
+  attachmentLimiter,
+  validate({ params: attachmentParams }),
+  asyncHandler(ctrl.deleteAttachment)
+);
 
 // Comments — any authenticated user can view/add; author edits/deletes own,
 // managers/admins moderate (enforced in the controller).

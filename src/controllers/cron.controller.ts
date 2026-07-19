@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { env } from "../lib/env";
 import { runScheduledSummaries } from "../lib/scheduler";
+import { runAttachmentCleanup } from "../lib/attachment-cleanup";
 
 /** Pull the caller's secret from a Bearer token, header, or query param. */
 function providedSecret(req: Request): string | undefined {
@@ -30,4 +31,22 @@ export async function cronLineSummaries(req: Request, res: Response) {
   }
   await runScheduledSummaries();
   res.json({ ok: true });
+}
+
+/**
+ * External-cron entrypoint for attachment cleanup — orphan Cloudinary sweep +
+ * failed-delete retry. Gated by CRON_SECRET; safe to call frequently (each unit
+ * of work is idempotent). Returns the cleanup summary for observability.
+ */
+export async function cronAttachmentCleanup(req: Request, res: Response) {
+  if (!env.CRON_SECRET) {
+    res.status(503).json({ ok: false, error: "CRON_SECRET not configured" });
+    return;
+  }
+  if (providedSecret(req) !== env.CRON_SECRET) {
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return;
+  }
+  const summary = await runAttachmentCleanup();
+  res.json({ ok: true, summary });
 }

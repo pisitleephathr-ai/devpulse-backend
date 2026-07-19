@@ -28,6 +28,16 @@ const schema = z.object({
   // When set, callers must present it; lets an external scheduler drive the
   // daily summaries even while the server would otherwise be idle/asleep.
   CRON_SECRET: z.string().optional(),
+  // Cloudinary — signed direct upload for task attachments (optional; the
+  // attachment-upload endpoints return 503 until all three are configured).
+  // The API secret is server-only and must NEVER be exposed to the frontend,
+  // logged, or returned in any response.
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
+  // Root folder for uploaded assets; per-task assets live under
+  // `${CLOUDINARY_UPLOAD_FOLDER}/tasks/{taskId}`.
+  CLOUDINARY_UPLOAD_FOLDER: z.string().default("devpulse"),
 });
 
 const parsed = schema.safeParse(process.env);

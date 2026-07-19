@@ -3,11 +3,15 @@ import app from "./app";
 import { env } from "./lib/env";
 import { prisma } from "./lib/prisma";
 import { startScheduler } from "./lib/scheduler";
+import { startAttachmentCleanup } from "./lib/attachment-cleanup";
 
 const server = app.listen(env.PORT, () => {
   console.log(`🚀 DevPulse API listening on http://localhost:${env.PORT}`);
   // Arm timed LINE summaries (no-op unless LINE is configured).
   startScheduler();
+  // Arm attachment cleanup — orphan sweep + failed-delete retry (no-op unless
+  // Cloudinary is configured).
+  startAttachmentCleanup();
 });
 
 // Graceful shutdown.

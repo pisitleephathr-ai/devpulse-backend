@@ -54,6 +54,7 @@ All `/api/*` routes except auth require `Authorization: Bearer <token>`.
 | Tasks | `GET /api/tasks` (filters: `projectId,assigneeId,status`), `GET /api/tasks/:id`, `POST /api/tasks`, `PATCH /api/tasks/:id`, `PATCH /api/tasks/:id/status`, `DELETE /api/tasks/:id` |
 | Leaves | `GET /api/leaves` (filters: `userId,type,status`), `GET /api/leaves/:id`, `POST /api/leaves`, `PATCH /api/leaves/:id/approve`*, `PATCH /api/leaves/:id/reject`*, `DELETE /api/leaves/:id` (owner while pending, or manager/admin) |
 | Dashboard | `GET /api/dashboard/summary`, `GET /api/dashboard/activity?limit=` |
+| Attachments | `GET /api/uploads/config`, `GET /api/tasks/:taskId/attachments/usage`, `POST /api/tasks/:taskId/attachments/signature`, `POST /api/tasks/:taskId/attachments/complete`, `DELETE /api/tasks/:taskId/attachments/:attachmentId` — see [ATTACHMENTS.md](ATTACHMENTS.md) |
 
 `*` = MANAGER or ADMIN only · `†` = ADMIN only.
 Report/Task edits are allowed for the owner or a manager/admin.
