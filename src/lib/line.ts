@@ -195,6 +195,58 @@ export async function pushFlexToUser(
   ]);
 }
 
+/** Per-user personal-LINE DM preference columns on User. */
+export type LinePersonalPref =
+  | "lineNotifyTaskAssigned"
+  | "lineNotifyLeaveDecision"
+  | "lineNotifyReportReminder";
+
+/**
+ * DM a set of users, but only those who (a) linked their LINE and (b) have the
+ * given personal preference enabled. One query resolves both; each recipient is
+ * pushed individually. Best-effort — never throws.
+ */
+export async function pushToUsersWithPref(
+  userIds: string[],
+  pref: LinePersonalPref,
+  messages: LineMessage[]
+): Promise<void> {
+  if (!env.LINE_ENABLED || !env.LINE_CHANNEL_ACCESS_TOKEN || !messages.length) {
+    return;
+  }
+  const ids = [...new Set(userIds.filter(Boolean))];
+  if (!ids.length) return;
+  try {
+    const users = await prisma.user.findMany({
+      where: { id: { in: ids }, lineUserId: { not: null } },
+      select: {
+        lineUserId: true,
+        lineNotifyTaskAssigned: true,
+        lineNotifyLeaveDecision: true,
+        lineNotifyReportReminder: true,
+      },
+    });
+    for (const u of users) {
+      if (!u.lineUserId || !u[pref]) continue;
+      await pushMessagesTo(u.lineUserId, messages);
+    }
+  } catch (err) {
+    console.warn("[line] push-with-pref error:", err);
+  }
+}
+
+/** Convenience: pref-gated Flex DM to several users. */
+export async function pushFlexToUsersWithPref(
+  userIds: string[],
+  pref: LinePersonalPref,
+  altText: string,
+  contents: LineMessage
+): Promise<void> {
+  await pushToUsersWithPref(userIds, pref, [
+    { type: "flex", altText: altText.slice(0, 400), contents },
+  ]);
+}
+
 /**
  * Reply to an incoming webhook event using its one-time replyToken. Free (does
  * not consume push quota) but only valid for a short window right after the

@@ -9,6 +9,7 @@ import { issueLinkCode } from "../lib/line-link";
 import { AppError } from "../middleware/error";
 import type {
   ChangePasswordInput,
+  LinePrefsInput,
   UpdateProfileInput,
 } from "../schemas/profile.schema";
 
@@ -73,17 +74,59 @@ export async function changePassword(req: Request, res: Response) {
 
 /* ------------------------- Personal LINE linking ------------------------- */
 
-/** GET /api/profile/line — the current user's personal-LINE link status. */
+/** GET /api/profile/line — the current user's personal-LINE link status + prefs. */
 export async function getLineStatus(req: Request, res: Response) {
   const user = await prisma.user.findUnique({
     where: { id: req.user!.id },
-    select: { lineUserId: true, lineLinkedAt: true },
+    select: {
+      lineUserId: true,
+      lineLinkedAt: true,
+      lineNotifyTaskAssigned: true,
+      lineNotifyLeaveDecision: true,
+      lineNotifyReportReminder: true,
+    },
   });
   res.json({
     linked: !!user?.lineUserId,
     linkedAt: user?.lineLinkedAt ?? null,
     lineEnabled: env.LINE_ENABLED,
     addFriendUrl: env.LINE_ADD_FRIEND_URL ?? null,
+    prefs: {
+      taskAssigned: user?.lineNotifyTaskAssigned ?? true,
+      leaveDecision: user?.lineNotifyLeaveDecision ?? true,
+      reportReminder: user?.lineNotifyReportReminder ?? true,
+    },
+  });
+}
+
+/** PATCH /api/profile/line/prefs — update the current user's DM preferences. */
+export async function updateLinePrefs(req: Request, res: Response) {
+  const body = req.body as LinePrefsInput;
+  const user = await prisma.user.update({
+    where: { id: req.user!.id },
+    data: {
+      ...(body.taskAssigned !== undefined && {
+        lineNotifyTaskAssigned: body.taskAssigned,
+      }),
+      ...(body.leaveDecision !== undefined && {
+        lineNotifyLeaveDecision: body.leaveDecision,
+      }),
+      ...(body.reportReminder !== undefined && {
+        lineNotifyReportReminder: body.reportReminder,
+      }),
+    },
+    select: {
+      lineNotifyTaskAssigned: true,
+      lineNotifyLeaveDecision: true,
+      lineNotifyReportReminder: true,
+    },
+  });
+  res.json({
+    prefs: {
+      taskAssigned: user.lineNotifyTaskAssigned,
+      leaveDecision: user.lineNotifyLeaveDecision,
+      reportReminder: user.lineNotifyReportReminder,
+    },
   });
 }
 

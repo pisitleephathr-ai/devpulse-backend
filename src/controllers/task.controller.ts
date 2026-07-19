@@ -6,7 +6,7 @@ import { logActivity } from "../lib/activity";
 import { notifyMany } from "../lib/notify";
 import {
   pushFlexToLineGroup,
-  pushFlexToUser,
+  pushFlexToUsersWithPref,
   appBaseUrl,
   getLinePrefs,
 } from "../lib/line";
@@ -190,7 +190,8 @@ export async function createTask(req: Request, res: Response) {
       }
     );
 
-    if ((await getLinePrefs()).notifyNewTask) {
+    {
+      const prefs = await getLinePrefs();
       const creator = await prisma.user.findUnique({
         where: { id: req.user!.id },
         select: { name: true },
@@ -209,11 +210,15 @@ export async function createTask(req: Request, res: Response) {
         },
         base ? `${base}/tasks?task=${task.id}` : undefined
       );
-      await pushFlexToLineGroup(card.altText, card.contents);
-      // Also DM each assignee (except the creator) on their personal LINE.
-      for (const uid of assigneeIds.filter((id) => id !== req.user!.id)) {
-        await pushFlexToUser(uid, card.altText, card.contents);
-      }
+      // Group card respects the team toggle; personal DMs respect each
+      // assignee's own preference (independent of the group setting).
+      if (prefs.notifyNewTask) await pushFlexToLineGroup(card.altText, card.contents);
+      await pushFlexToUsersWithPref(
+        assigneeIds.filter((id) => id !== req.user!.id),
+        "lineNotifyTaskAssigned",
+        card.altText,
+        card.contents
+      );
     }
   } catch (err) {
     console.warn("[task.create] post-commit side-effect failed:", err);
@@ -317,8 +322,8 @@ export async function updateTask(req: Request, res: Response) {
       entityType: "task",
       entityId: id,
     });
-    // DM each newly-added assignee on their personal LINE (best-effort).
-    if (added.length && task && (await getLinePrefs()).notifyNewTask) {
+    // DM each newly-added assignee on their personal LINE (per-user pref).
+    if (added.length && task) {
       const actor = await prisma.user.findUnique({
         where: { id: req.user!.id },
         select: { name: true },
@@ -337,7 +342,12 @@ export async function updateTask(req: Request, res: Response) {
         },
         base ? `${base}/tasks?task=${task.id}` : undefined
       );
-      for (const uid of added) await pushFlexToUser(uid, card.altText, card.contents);
+      await pushFlexToUsersWithPref(
+        added,
+        "lineNotifyTaskAssigned",
+        card.altText,
+        card.contents
+      );
     }
   }
 

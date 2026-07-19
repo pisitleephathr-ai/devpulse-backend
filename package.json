@@ -21,6 +21,7 @@
     "seed": "tsx prisma/seed.ts",
     "seed:roles": "tsx prisma/seed-roles.ts",
     "seed:holidays": "tsx prisma/seed-holidays.ts",
+    "line:richmenu": "tsx src/scripts/line-richmenu.ts",
     "import:daily-meet": "tsx prisma/import-google-daily-meet.ts",
     "studio": "prisma studio",
     "db:reset": "prisma migrate reset"

@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { notifyMany } from "../lib/notify";
+import { pushToUsersWithPref, appBaseUrl } from "../lib/line";
 import { getBangkokDateString, bangkokDateToUtcRange } from "../lib/date";
 import { workdayInfo } from "../lib/workday";
 import { onLeaveUserIds } from "../lib/leave-status";
@@ -202,6 +203,17 @@ export async function remind(req: Request, res: Response) {
     message: "กรุณาส่งรายงานประจำวันสำหรับการประชุมเช้า",
     entityType: "report",
   });
+
+  // Also nudge on personal LINE (per-user pref; linked users only).
+  const base = appBaseUrl();
+  await pushToUsersWithPref(missing, "lineNotifyReportReminder", [
+    {
+      type: "text",
+      text:
+        "⏰ อย่าลืมส่งรายงานประจำวันนะครับ" +
+        (base ? `\nส่งได้ที่: ${base}/reports` : ""),
+    },
+  ]);
 
   res.json({ notified: missing.length });
 }

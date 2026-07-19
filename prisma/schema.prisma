@@ -84,6 +84,11 @@ model User {
   lineUserId String?  @unique
   /// when the personal LINE account was linked (for display + audit)
   lineLinkedAt DateTime?
+  /// Per-user personal-LINE DM preferences — each user opts in/out of the
+  /// personal notifications they receive (independent of the team's group prefs).
+  lineNotifyTaskAssigned   Boolean @default(true)
+  lineNotifyLeaveDecision  Boolean @default(true)
+  lineNotifyReportReminder Boolean @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 

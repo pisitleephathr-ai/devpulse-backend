@@ -20,5 +20,17 @@ export const changePasswordSchema = z
     path: ["newPassword"],
   });
 
+/** Per-user personal-LINE notification preferences (all optional/partial). */
+export const linePrefsSchema = z
+  .object({
+    taskAssigned: z.boolean().optional(),
+    leaveDecision: z.boolean().optional(),
+    reportReminder: z.boolean().optional(),
+  })
+  .refine((d) => Object.keys(d).length > 0, {
+    message: "ต้องระบุการตั้งค่าอย่างน้อยหนึ่งรายการ",
+  });
+
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type LinePrefsInput = z.infer<typeof linePrefsSchema>;
