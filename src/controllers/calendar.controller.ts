@@ -36,11 +36,13 @@ export async function listEvents(req: Request, res: Response) {
       orderBy: { startDate: "asc" },
     }),
     // Tasks span createdAt → dueDate (a work window), so include any task whose
-    // span overlaps the month. Tasks without a due date are omitted.
+    // span overlaps the month. Tasks without a due date are omitted, and TODO
+    // tasks (created but not started) are hidden from the calendar.
     prisma.task.findMany({
       where: {
         dueDate: { not: null, gte: start },
         createdAt: { lt: endExclusive },
+        status: { not: "TODO" },
       },
       include: { project: { select: projectSelect }, assignee: { select: userMiniSelect } },
     }),
