@@ -10,6 +10,8 @@ export const createUserSchema = z
     avatarKey: z.string().min(1).optional(),
     active: z.boolean().optional(),
     requiresDailyReport: z.boolean().optional(),
+    /** send a welcome email to the new user (only if the mailer is configured) */
+    sendWelcomeEmail: z.boolean().optional(),
   })
   .refine((d) => d.roleId || d.roleCode, {
     message: "ต้องระบุ roleId หรือ roleCode",

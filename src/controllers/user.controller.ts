@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { hashPassword } from "../lib/password";
 import { userPublicSelect, serializeUser } from "../lib/selects";
 import { logActivity } from "../lib/activity";
+import { isMailerConfigured, sendMail, welcomeEmailHtml } from "../lib/mailer";
 import { roleIsAdmin } from "../lib/roles";
 import { AppError } from "../middleware/error";
 import type { CreateUserInput, UpdateUserInput } from "../schemas/user.schema";
@@ -95,7 +96,23 @@ export async function createUser(req: Request, res: Response) {
     entityId: user.id,
   });
 
-  res.status(201).json({ user: serializeUser(user) });
+  // Best-effort welcome email (only when the mailer is configured + requested).
+  let emailed = false;
+  if (isMailerConfigured() && data.sendWelcomeEmail !== false) {
+    const mail = welcomeEmailHtml({
+      name: user.name,
+      email: user.email,
+      password: data.password,
+    });
+    const r = await sendMail({ to: user.email, subject: mail.subject, html: mail.html });
+    emailed = r.ok;
+  }
+
+  res.status(201).json({
+    user: serializeUser(user),
+    emailed,
+    mailerConfigured: isMailerConfigured(),
+  });
 }
 
 export async function updateUser(req: Request, res: Response) {

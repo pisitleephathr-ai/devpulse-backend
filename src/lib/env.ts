@@ -32,6 +32,11 @@ const schema = z.object({
   // When set, callers must present it; lets an external scheduler drive the
   // daily summaries even while the server would otherwise be idle/asleep.
   CRON_SECRET: z.string().optional(),
+  // Resend email (optional). When RESEND_API_KEY is set, adding a user can send
+  // a welcome email. MAIL_FROM must be a verified Resend sender, e.g.
+  // "DevPulse <noreply@trrappstore.com>". Falls back to the Resend sandbox.
+  RESEND_API_KEY: z.string().optional(),
+  MAIL_FROM: z.string().optional(),
   // Cloudinary — signed direct upload for task attachments (optional; the
   // attachment-upload endpoints return 503 until all three are configured).
   // The API secret is server-only and must NEVER be exposed to the frontend,
