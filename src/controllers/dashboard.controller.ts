@@ -57,7 +57,11 @@ export async function summary(_req: Request, res: Response) {
       select: { blockers: true },
     }),
     prisma.task.groupBy({ by: ["projectId", "status"], _count: { _all: true } }),
-    prisma.project.findMany({ select: { id: true, name: true, code: true, color: true } }),
+    // Archived projects are hidden from the dashboard progress list.
+    prisma.project.findMany({
+      where: { isArchived: false },
+      select: { id: true, name: true, code: true, color: true },
+    }),
     // The dashboard feed shows only core team-work activity: the task board
     // (task.*), daily reports (report.*), and APPROVED leave requests. Everything
     // else (projects, comments, pending/rejected leaves, and the sensitive
