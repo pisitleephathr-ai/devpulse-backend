@@ -19,6 +19,7 @@ import {
   leaveTodayFlex,
   reportSummaryFlex,
   performanceSummaryFlex,
+  highlightReelFlex,
   type LeaveTodayEntry,
   type ReportEntry,
   type PerformanceEntry,
@@ -189,6 +190,65 @@ async function sendPerformanceSummary(): Promise<SendResult> {
 }
 
 /**
+ * Build + push the weekly highlight reel: "what the team shipped this week" —
+ * tasks closed, reports submitted, kudos given, plus the standout contributors
+ * and most-active projects over the last 7 days.
+ */
+async function sendHighlightReel(): Promise<SendResult> {
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const [doneTasks, reportsSubmitted, kudosCount] = await Promise.all([
+    prisma.task.findMany({
+      where: { status: "DONE", completedAt: { not: null, gte: since } },
+      select: {
+        project: { select: { name: true } },
+        assignees: { select: { user: { select: { id: true, name: true } } } },
+      },
+    }),
+    prisma.dailyReport.count({ where: { createdAt: { gte: since } } }),
+    prisma.kudos.count({ where: { createdAt: { gte: since } } }),
+  ]);
+
+  const tasksCompleted = doneTasks.length;
+  if (tasksCompleted === 0 && reportsSubmitted === 0 && kudosCount === 0) {
+    return { pushed: false, reason: "สัปดาห์นี้ยังไม่มีความเคลื่อนไหวให้สรุป" };
+  }
+
+  // Tally closed tasks per contributor (multi-assignee aware) and per project.
+  const byUser = new Map<string, { name: string; closed: number }>();
+  const byProject = new Map<string, { name: string; closed: number }>();
+  for (const t of doneTasks) {
+    for (const a of t.assignees) {
+      const e = byUser.get(a.user.id) ?? { name: a.user.name, closed: 0 };
+      e.closed += 1;
+      byUser.set(a.user.id, e);
+    }
+    const pname = t.project?.name ?? "—";
+    const pe = byProject.get(pname) ?? { name: pname, closed: 0 };
+    pe.closed += 1;
+    byProject.set(pname, pe);
+  }
+  const topContributors = [...byUser.values()].sort((a, b) => b.closed - a.closed);
+  const topProjects = [...byProject.values()].sort((a, b) => b.closed - a.closed);
+
+  const base = appBaseUrl();
+  const card = highlightReelFlex(
+    "7 วันล่าสุด",
+    {
+      tasksCompleted,
+      reportsSubmitted,
+      kudosCount,
+      activeContributors: byUser.size,
+      topContributors,
+      topProjects,
+    },
+    base ? `${base}/analytics` : undefined
+  );
+  await pushFlexToLineGroup(card.altText, card.contents);
+  return { pushed: true };
+}
+
+/**
  * Personal morning digest: DM each linked user (who allows it) their overdue +
  * due-today + due-tomorrow tasks. Skips users with nothing due. Respects the
  * team master switch, each role's allow-list, and the user's own pref.
@@ -227,7 +287,7 @@ async function sendPersonalDigests(): Promise<SendResult> {
  * connection so the caller gets a clear reason when delivery isn't possible.
  */
 export async function triggerSummary(
-  kind: "leave" | "report" | "performance" | "digest"
+  kind: "leave" | "report" | "performance" | "highlight" | "digest"
 ): Promise<{ sent: boolean; reason?: string }> {
   // Group summaries need a linked group; the personal digest is a DM (no group).
   if (kind !== "digest") {
@@ -242,7 +302,9 @@ export async function triggerSummary(
         ? await sendReportSummary(today)
         : kind === "performance"
           ? await sendPerformanceSummary()
-          : await sendPersonalDigests();
+          : kind === "highlight"
+            ? await sendHighlightReel()
+            : await sendPersonalDigests();
   return { sent: r.pushed, reason: r.reason };
 }
 
@@ -286,12 +348,18 @@ async function tick(): Promise<void> {
     bangkokWeekday() === 1 &&
     setting.lineWeeklyPerformanceLastRun !== today &&
     now >= hm(setting.lineWeeklyPerformanceTime, "09:00");
+  // Weekly highlight reel: Mondays only (Bangkok weekday 1).
+  const highlightDue =
+    setting.lineWeeklyHighlight &&
+    bangkokWeekday() === 1 &&
+    setting.lineWeeklyHighlightLastRun !== today &&
+    now >= hm(setting.lineWeeklyHighlightTime, "09:00");
   // Personal morning digest (DM to each linked user).
   const digestDue =
     setting.lineDailyDigest &&
     setting.lineDailyDigestLastRun !== today &&
     now >= hm(setting.lineDailyDigestTime, "08:30");
-  if (!leaveDue && !reportDue && !performanceDue && !digestDue) return;
+  if (!leaveDue && !reportDue && !performanceDue && !highlightDue && !digestDue) return;
 
   // A company holiday is a day off — send nothing.
   if (await isCompanyHoliday(today)) return;
@@ -323,6 +391,16 @@ async function tick(): Promise<void> {
     });
     await sendPerformanceSummary().catch((e) =>
       console.warn("[scheduler] performance summary failed:", e)
+    );
+  }
+
+  if (highlightDue) {
+    await prisma.teamSetting.update({
+      where: { id: setting.id },
+      data: { lineWeeklyHighlightLastRun: today },
+    });
+    await sendHighlightReel().catch((e) =>
+      console.warn("[scheduler] highlight reel failed:", e)
     );
   }
 

@@ -761,3 +761,112 @@ export function performanceSummaryFlex(
   });
   return { altText: `🏆 สรุปผลงานทีม (${rangeLabel})`, contents };
 }
+
+export type HighlightReelData = {
+  /** tasks moved to DONE in the window */
+  tasksCompleted: number;
+  /** daily reports submitted in the window */
+  reportsSubmitted: number;
+  /** kudos given in the window */
+  kudosCount: number;
+  /** distinct people who closed at least one task */
+  activeContributors: number;
+  /** people ranked by tasks closed, best-first (caller pre-sorts) */
+  topContributors: { name: string; closed: number }[];
+  /** projects ranked by tasks closed, best-first (caller pre-sorts) */
+  topProjects: { name: string; closed: number }[];
+};
+
+/** One big headline metric: value + caption, laid out side-by-side. */
+function reelMetric(value: string, caption: string, color: string): LineMessage {
+  return {
+    type: "box",
+    layout: "vertical",
+    flex: 1,
+    contents: [
+      { type: "text", text: value, color, size: "xxl", weight: "bold", align: "center" },
+      { type: "text", text: caption, color: MUTED, size: "xxs", align: "center", wrap: true },
+    ],
+  };
+}
+
+/** One ranked row: medal/bullet + name + a right-aligned count. */
+function reelRow(medal: string, name: string, count: number, unit: string): LineMessage {
+  return {
+    type: "box",
+    layout: "baseline",
+    spacing: "sm",
+    margin: "md",
+    contents: [
+      { type: "text", text: medal, size: "sm", flex: 0 },
+      { type: "text", text: name, color: INK, size: "sm", weight: "bold", flex: 5, wrap: true },
+      { type: "text", text: `${count} ${unit}`, color: TEAL, size: "sm", weight: "bold", align: "end", flex: 3 },
+    ],
+  };
+}
+
+/**
+ * Weekly highlight reel: a celebratory "what the team shipped this week" card.
+ * Leads with three headline numbers (tasks shipped / reports / kudos), then the
+ * top contributors and most-active projects. All figures are pre-computed by the
+ * caller for the same window `rangeLabel` describes.
+ */
+export function highlightReelFlex(
+  rangeLabel: string,
+  data: HighlightReelData,
+  url?: string
+): { altText: string; contents: LineMessage } {
+  const body: LineMessage[] = [
+    titleLine("ไฮไลต์ประจำสัปดาห์"),
+    { type: "text", text: `ทีมส่งมอบอะไรบ้าง · ${rangeLabel}`, color: MUTED, size: "xs" },
+    { type: "separator", margin: "md", color: HAIRLINE },
+    {
+      type: "box",
+      layout: "horizontal",
+      margin: "md",
+      contents: [
+        reelMetric(String(data.tasksCompleted), "งานที่ปิด", TEAL),
+        reelMetric(String(data.reportsSubmitted), "รายงาน", "#2563eb"),
+        reelMetric(String(data.kudosCount), "ชื่นชม", "#d97706"),
+      ],
+    },
+  ];
+
+  const nothing =
+    data.tasksCompleted === 0 &&
+    data.reportsSubmitted === 0 &&
+    data.kudosCount === 0;
+  if (nothing) {
+    body.push(
+      { type: "separator", margin: "md", color: HAIRLINE },
+      { type: "text", text: "สัปดาห์นี้ยังไม่มีความเคลื่อนไหว เริ่มสัปดาห์ใหม่ให้ปังกันเลย 💪", color: MUTED, size: "sm", wrap: true, margin: "md" }
+    );
+  } else {
+    if (data.topContributors.length) {
+      body.push({ type: "separator", margin: "md", color: HAIRLINE });
+      body.push({ type: "text", text: "⭐ ผู้ส่งมอบงานเด่น", color: INK, size: "xs", weight: "bold", margin: "md" });
+      data.topContributors
+        .slice(0, 3)
+        .forEach((c, i) =>
+          body.push(reelRow(i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉", c.name, c.closed, "งาน"))
+        );
+    }
+    if (data.topProjects.length) {
+      body.push({ type: "separator", margin: "md", color: HAIRLINE });
+      body.push({ type: "text", text: "📦 โปรเจกต์ที่คืบหน้ามากสุด", color: INK, size: "xs", weight: "bold", margin: "md" });
+      data.topProjects
+        .slice(0, 3)
+        .forEach((p) => body.push(reelRow("•", p.name, p.closed, "งาน")));
+    }
+  }
+
+  const contents = shell("🎉 ไฮไลต์ประจำสัปดาห์", body, {
+    url,
+    headerColor: TEAL,
+    buttonLabel: "เปิดแดชบอร์ด ↗",
+  });
+  return {
+    altText: `🎉 ไฮไลต์ประจำสัปดาห์: ปิด ${data.tasksCompleted} งาน (${rangeLabel})`,
+    contents,
+  };
+}

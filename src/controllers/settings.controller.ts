@@ -50,9 +50,11 @@ export async function testLineSummary(req: Request, res: Response) {
       ? "leave"
       : k === "performance"
         ? "performance"
-        : k === "digest"
-          ? "digest"
-          : "report";
+        : k === "highlight"
+          ? "highlight"
+          : k === "digest"
+            ? "digest"
+            : "report";
   const result = await triggerSummary(kind);
   res.json(result);
 }
@@ -68,6 +70,7 @@ export async function updateSettings(req: Request, res: Response) {
     lineReportSummaryLastRun?: null;
     lineLeaveSummaryLastRun?: null;
     lineWeeklyPerformanceLastRun?: null;
+    lineWeeklyHighlightLastRun?: null;
     lineDailyDigestLastRun?: null;
   } = {};
   if (existing) {
@@ -88,6 +91,12 @@ export async function updateSettings(req: Request, res: Response) {
         data.lineWeeklyPerformanceTime !== existing.lineWeeklyPerformanceTime) ||
       (data.lineWeeklyPerformance === true && !existing.lineWeeklyPerformance);
     if (perfRearmed) extra.lineWeeklyPerformanceLastRun = null;
+
+    const highlightRearmed =
+      (data.lineWeeklyHighlightTime !== undefined &&
+        data.lineWeeklyHighlightTime !== existing.lineWeeklyHighlightTime) ||
+      (data.lineWeeklyHighlight === true && !existing.lineWeeklyHighlight);
+    if (highlightRearmed) extra.lineWeeklyHighlightLastRun = null;
 
     const digestRearmed =
       (data.lineDailyDigestTime !== undefined &&
