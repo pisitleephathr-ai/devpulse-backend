@@ -116,34 +116,54 @@ function esc(s: string): string {
   return s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!));
 }
 
-/** A themed SVG matching the grid, rasterized to PNG by Cloudinary. */
+/**
+ * A polished SVG matching the 2x3 tappable grid, rasterized to PNG by Cloudinary.
+ * Each cell is a rounded card with an icon chip and a label; chat cells are teal,
+ * web cells are indigo, with a small tag telling the user what a tap does.
+ */
 function buildSvg(): string {
-  const teal = "#0d9488";
-  const cells = CELLS.map((cell, i) => {
+  const M = 46; // card margin inside each grid cell
+  const cards = CELLS.map((cell, i) => {
     const col = i % COLS;
     const row = Math.floor(i / COLS);
-    const cx = col * CELL_W + CELL_W / 2;
-    const cy = row * CELL_H + CELL_H / 2;
+    const x = col * CELL_W + M;
+    const y = row * CELL_H + M;
+    const w = CELL_W - M * 2;
+    const h = CELL_H - M * 2;
+    const cx = x + w / 2;
+
+    const isChat = cell.kind === "chat";
+    const chipFill = isChat ? "#ccfbf1" : "#e0e7ff";
+    const barFill = isChat ? "#0d9488" : "#6366f1";
+    const tagColor = isChat ? "#0f766e" : "#4f46e5";
+    const tag = isChat ? "💬 ตอบในแชท" : "↗ เปิดหน้าเว็บ";
+    const iconCy = y + h * 0.36;
+
     return `
       <g>
-        <text x="${cx}" y="${cy - 40}" font-size="150" text-anchor="middle" dominant-baseline="middle">${cell.emoji}</text>
-        <text x="${cx}" y="${cy + 110}" font-size="72" font-family="sans-serif" font-weight="700" fill="#1f2937" text-anchor="middle">${esc(cell.label)}</text>
+        <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="56" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
+        <rect x="${x}" y="${y}" width="${w}" height="14" rx="7" fill="${barFill}"/>
+        <circle cx="${cx}" cy="${iconCy}" r="112" fill="${chipFill}"/>
+        <text x="${cx}" y="${iconCy}" font-size="118" text-anchor="middle" dominant-baseline="central">${cell.emoji}</text>
+        <text x="${cx}" y="${y + h * 0.68}" font-size="70" font-family="sans-serif" font-weight="700" fill="#0f172a" text-anchor="middle">${esc(cell.label)}</text>
+        <text x="${cx}" y="${y + h * 0.83}" font-size="42" font-family="sans-serif" font-weight="600" fill="${tagColor}" text-anchor="middle">${esc(tag)}</text>
       </g>`;
   }).join("");
-  const grid = `
-    <line x1="${CELL_W}" y1="0" x2="${CELL_W}" y2="${RICHMENU_HEIGHT}" stroke="#e5e7eb" stroke-width="3"/>
-    <line x1="${CELL_W * 2}" y1="0" x2="${CELL_W * 2}" y2="${RICHMENU_HEIGHT}" stroke="#e5e7eb" stroke-width="3"/>
-    <line x1="0" y1="${CELL_H}" x2="${RICHMENU_WIDTH}" y2="${CELL_H}" stroke="#e5e7eb" stroke-width="3"/>`;
+
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${RICHMENU_WIDTH}" height="${RICHMENU_HEIGHT}" viewBox="0 0 ${RICHMENU_WIDTH} ${RICHMENU_HEIGHT}">
-    <rect width="${RICHMENU_WIDTH}" height="${RICHMENU_HEIGHT}" fill="#ffffff"/>
-    <rect width="${RICHMENU_WIDTH}" height="12" fill="${teal}"/>
-    ${grid}
-    ${cells}
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#f8fafc"/>
+        <stop offset="1" stop-color="#eef2f6"/>
+      </linearGradient>
+    </defs>
+    <rect width="${RICHMENU_WIDTH}" height="${RICHMENU_HEIGHT}" fill="url(#bg)"/>
+    ${cards}
   </svg>`;
 }
 
-/** Rasterize the generated SVG to a PNG buffer via Cloudinary. */
-export async function generateRichMenuImage(): Promise<Buffer> {
+/** Rasterize the generated SVG via Cloudinary and return the delivered PNG URL. */
+export async function generateRichMenuPngUrl(): Promise<string> {
   if (
     !env.CLOUDINARY_CLOUD_NAME ||
     !env.CLOUDINARY_API_KEY ||
@@ -164,8 +184,9 @@ export async function generateRichMenuImage(): Promise<Buffer> {
     folder: `${env.CLOUDINARY_UPLOAD_FOLDER || "devpulse"}/system`,
     public_id: "line-richmenu",
     overwrite: true,
+    invalidate: true,
   });
-  const pngUrl = cloudinary.url(uploaded.public_id, {
+  return cloudinary.url(uploaded.public_id, {
     resource_type: "image",
     format: "png",
     width: RICHMENU_WIDTH,
@@ -174,6 +195,11 @@ export async function generateRichMenuImage(): Promise<Buffer> {
     secure: true,
     version: uploaded.version,
   });
+}
+
+/** Rasterize the generated SVG to a PNG buffer via Cloudinary. */
+export async function generateRichMenuImage(): Promise<Buffer> {
+  const pngUrl = await generateRichMenuPngUrl();
   const res = await fetch(pngUrl);
   if (!res.ok) throw new Error(`rasterize failed: ${res.status} ${await res.text()}`);
   return Buffer.from(await res.arrayBuffer());
