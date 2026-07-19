@@ -42,7 +42,20 @@ export async function standup(req: Request, res: Response) {
         project: { select: { name: true, code: true, color: true } },
         relatedTasks: {
           include: {
-            task: { select: { id: true, title: true, status: true, priority: true } },
+            task: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+                priority: true,
+                dueDate: true,
+                project: { select: { code: true, color: true, name: true } },
+                assignees: {
+                  select: { user: { select: { id: true, name: true, avatarKey: true } } },
+                },
+                checklist: { select: { done: true } },
+              },
+            },
           },
           orderBy: { createdAt: "asc" },
         },
@@ -81,14 +94,28 @@ export async function standup(req: Request, res: Response) {
 
   // Related tasks now come from the explicit report↔task links a member chose
   // (deduped per user, capped for a compact standup view). Reports without any
-  // linked tasks simply contribute none — keeping standup report-focused.
-  type MiniTask = (typeof reports)[number]["relatedTasks"][number]["task"];
+  // linked tasks simply contribute none — keeping standup report-focused. Each
+  // task is flattened to a lightweight shape with the detail the standup UI
+  // needs (due date, project, assignees, checklist progress).
+  type RawTask = (typeof reports)[number]["relatedTasks"][number]["task"];
+  const serializeTask = (t: RawTask) => ({
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    priority: t.priority,
+    dueDate: t.dueDate,
+    project: t.project,
+    assignees: t.assignees.map((a) => a.user),
+    checklistTotal: t.checklist.length,
+    checklistDone: t.checklist.filter((c) => c.done).length,
+  });
+  type MiniTask = ReturnType<typeof serializeTask>;
   const tasksByUser = new Map<string, MiniTask[]>();
   for (const r of reports) {
     const arr = tasksByUser.get(r.authorId) ?? [];
     for (const rt of r.relatedTasks) {
-      if (arr.length >= 5) break;
-      if (!arr.some((t) => t.id === rt.task.id)) arr.push(rt.task);
+      if (arr.length >= 6) break;
+      if (!arr.some((t) => t.id === rt.task.id)) arr.push(serializeTask(rt.task));
     }
     tasksByUser.set(r.authorId, arr);
   }
