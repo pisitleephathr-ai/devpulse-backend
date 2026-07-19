@@ -2,7 +2,8 @@ import type { Request, Response } from "express";
 import crypto from "crypto";
 import { prisma } from "../lib/prisma";
 import { env } from "../lib/env";
-import { replyTextToLine, replyToLine } from "../lib/line";
+import { replyToLine } from "../lib/line";
+import { infoFlex } from "../lib/line-messages";
 import { linkByCode, unlinkByLineUserId } from "../lib/line-link";
 import {
   handleBotCommand,
@@ -51,6 +52,17 @@ async function setGroupId(groupId: string | null) {
 const LINK_HELP =
   "ส่งรหัสเชื่อมต่อ 6 หลักที่ได้จากหน้า “โปรไฟล์ → เชื่อมต่อ LINE” ในระบบ DevPulse เพื่อผูกบัญชีนะครับ";
 
+/** Reply a single info card (all bot replies are cards). */
+async function replyCard(
+  token: string,
+  header: string,
+  color: string,
+  body: string
+): Promise<void> {
+  const c = infoFlex(header, color, body);
+  await replyToLine(token, [{ type: "flex", altText: c.altText.slice(0, 400), contents: c.contents }]);
+}
+
 /**
  * Handle a 1:1 (personal) webhook event. A text message is treated as a link
  * code: matching one binds the sender's LINE id to that user's account. `follow`
@@ -84,9 +96,11 @@ async function handleUserEvent(ev: {
 
   if (ev.type === "follow") {
     if (ev.replyToken) {
-      await replyTextToLine(
+      await replyCard(
         ev.replyToken,
-        `สวัสดีครับ 👋 นี่คือบอทแจ้งเตือนของ DevPulse\n${LINK_HELP}`
+        "👋 ยินดีต้อนรับสู่ DevPulse",
+        "#0d9488",
+        `บอทแจ้งเตือนงานของทีม\n\n${LINK_HELP}`
       );
     }
     return;
@@ -98,9 +112,11 @@ async function handleUserEvent(ev: {
     const linked = await linkByCode(text, lineUserId);
     if (!ev.replyToken) return;
     if (linked) {
-      await replyTextToLine(
+      await replyCard(
         ev.replyToken,
-        `✅ เชื่อมต่อบัญชีสำเร็จ คุณ${linked.name}\nจากนี้จะได้รับการแจ้งเตือนงานส่วนตัวทาง LINE นี้ครับ`
+        "✅ เชื่อมต่อบัญชีสำเร็จ",
+        "#16a34a",
+        `สวัสดีคุณ${linked.name}\nจากนี้จะได้รับแจ้งเตือนงานส่วนตัวทาง LINE นี้ครับ\nพิมพ์ "เมนู" เพื่อดูคำสั่งทั้งหมด`
       );
       return;
     }
@@ -122,9 +138,11 @@ async function handleUserEvent(ev: {
             : await handleBotCommand(matchTextCommand(text) ?? "help", lineUserId);
       if (messages.length) await replyToLine(ev.replyToken, messages);
     } else {
-      await replyTextToLine(
+      await replyCard(
         ev.replyToken,
-        `ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว\n${LINK_HELP}`
+        "🔗 ยังไม่ได้เชื่อมต่อ",
+        "#d97706",
+        `ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว\n\n${LINK_HELP}`
       );
     }
   }

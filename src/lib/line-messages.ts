@@ -26,6 +26,92 @@ export function statusMeta(s: TaskStatus): { label: string; color: string } {
   return STATUS[s];
 }
 
+/**
+ * A simple info/notice card: a colored header + text body (one text per line).
+ * Used for the bot's short replies (help, confirmations, errors) so everything
+ * looks like a card, not plain text.
+ */
+export function infoFlex(
+  header: string,
+  headerColor: string,
+  bodyText: string,
+  opts: { url?: string; footerLabel?: string; bodyColor?: string } = {}
+): { altText: string; contents: LineMessage } {
+  const body: LineMessage[] = bodyText.split("\n").map((line) => ({
+    type: "text",
+    text: line.length ? line : " ",
+    size: "sm",
+    color: opts.bodyColor ?? INK,
+    wrap: true,
+  }));
+  const contents = shell(header, body, {
+    url: opts.url,
+    headerColor,
+    buttonLabel: opts.footerLabel,
+  });
+  return { altText: `${header}`, contents };
+}
+
+/** Bot help/menu card: a titled list of the commands the user can type. */
+export function botHelpFlex(): { altText: string; contents: LineMessage } {
+  const cmds: [string, string][] = [
+    ["📋", "งานของฉัน"],
+    ["⚠️", "งานเลยกำหนด"],
+    ["📅", "งานครบกำหนดวันนี้"],
+    ["🌴", "ใครลาวันนี้"],
+    ["📊", "สถานะรายงานวันนี้"],
+    ["✅", "เสร็จ <ชื่องาน> — ปิดงานให้"],
+    ["👥", "งานของ <ชื่อ> — สำหรับหัวหน้า"],
+  ];
+  const body: LineMessage[] = [
+    { type: "text", text: "พิมพ์คำสั่ง หรือกดปุ่มเมนูด้านล่างได้เลยครับ", color: MUTED, size: "xs", wrap: true },
+    { type: "separator", margin: "md", color: HAIRLINE },
+    ...cmds.map(([icon, label]) => ({
+      type: "box" as const,
+      layout: "baseline" as const,
+      spacing: "sm" as const,
+      margin: "md" as const,
+      contents: [
+        { type: "text", text: icon, size: "sm", flex: 0 },
+        { type: "text", text: label, size: "sm", color: INK, wrap: true, flex: 1 },
+      ],
+    })),
+  ];
+  const contents = shell("🤖 เมนูบอท DevPulse", body, { headerColor: TEAL });
+  return { altText: "🤖 เมนูบอท DevPulse", contents };
+}
+
+/** Report-submission status card (for the "สถานะรายงานวันนี้" bot command). */
+export function reportStatusFlex(
+  submittedCount: number,
+  total: number,
+  missingNames: string[],
+  url?: string
+): { altText: string; contents: LineMessage } {
+  const complete = missingNames.length === 0;
+  const body: LineMessage[] = [
+    {
+      type: "text",
+      text: `ส่งแล้ว ${submittedCount}/${total}`,
+      size: "xxl",
+      weight: "bold",
+      color: complete ? "#16a34a" : INK,
+    },
+    { type: "separator", margin: "md", color: HAIRLINE },
+    complete
+      ? { type: "text", text: "🎉 ส่งครบทุกคนแล้ว", color: "#16a34a", size: "sm", weight: "bold" }
+      : { type: "text", text: `ยังไม่ส่ง (${missingNames.length})`, color: "#dc2626", size: "sm", weight: "bold" },
+  ];
+  if (!complete)
+    body.push({ type: "text", text: missingNames.join(", "), color: INK, size: "sm", wrap: true, margin: "sm" });
+  const contents = shell("📊 รายงานประจำวันวันนี้", body, {
+    url,
+    headerColor: TEAL,
+    buttonLabel: "เปิดดูรายงาน ↗",
+  });
+  return { altText: `📊 รายงาน: ส่งแล้ว ${submittedCount}/${total}`, contents };
+}
+
 export type TaskRow = {
   title: string;
   status: TaskStatus;

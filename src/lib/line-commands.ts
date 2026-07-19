@@ -6,10 +6,13 @@
 import { prisma } from "./prisma";
 import { appBaseUrl, type LineMessage } from "./line";
 import {
-  leaveTypeLabel,
-  leaveDaysLabel,
   taskListFlex,
+  leaveTodayFlex,
+  reportStatusFlex,
+  botHelpFlex,
+  infoFlex,
   type TaskRow,
+  type LeaveTodayEntry,
 } from "./line-messages";
 import { getBangkokDateString, bangkokDateToUtcRange } from "./date";
 import { workdayInfo } from "./workday";
@@ -68,11 +71,17 @@ export function parseMemberCommand(raw: string): string | null {
   return name;
 }
 
-function text(t: string): LineMessage {
-  return { type: "text", text: t.slice(0, 4900) };
-}
 function flex(card: { altText: string; contents: LineMessage }): LineMessage {
   return { type: "flex", altText: card.altText.slice(0, 400), contents: card.contents };
+}
+/** A single-card reply built from an info bubble. */
+function card(
+  header: string,
+  color: string,
+  body: string,
+  opts?: { url?: string; footerLabel?: string; bodyColor?: string }
+): LineMessage[] {
+  return [flex(infoFlex(header, color, body, opts))];
 }
 
 function thaiDate(d: Date): string {
@@ -111,8 +120,12 @@ function toRows(tasks: TaskLite[], base: string | null): TaskRow[] {
   }));
 }
 
-const NOT_LINKED =
-  "ยังไม่ได้เชื่อมต่อบัญชี — เปิดเว็บ DevPulse → โปรไฟล์ → เชื่อมต่อ LINE เพื่อใช้คำสั่งนี้ครับ";
+const notLinked = (): LineMessage[] =>
+  card(
+    "🔗 ยังไม่ได้เชื่อมต่อบัญชี",
+    "#d97706",
+    "เปิดเว็บ DevPulse → โปรไฟล์ → เชื่อมต่อ LINE\nแล้วส่งรหัสในแชทนี้เพื่อผูกบัญชีก่อนใช้คำสั่งนะครับ"
+  );
 
 /** Tasks assigned to a user (either the legacy primary or the join table). */
 const assignedTo = (userId: string) => ({
@@ -129,7 +142,7 @@ async function findLinkedUser(lineUserId: string) {
 /** "งานของฉัน" — the caller's open (not-done) tasks, as a Flex list. */
 async function myTasks(lineUserId: string): Promise<LineMessage[]> {
   const user = await findLinkedUser(lineUserId);
-  if (!user) return [text(NOT_LINKED)];
+  if (!user) return notLinked();
   const base = appBaseUrl();
   const tasks = await prisma.task.findMany({
     where: { status: { not: "DONE" }, ...assignedTo(user.id) },
@@ -137,7 +150,8 @@ async function myTasks(lineUserId: string): Promise<LineMessage[]> {
     orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }],
     take: 15,
   });
-  if (!tasks.length) return [text(`🎉 คุณ${user.name} ไม่มีงานค้างอยู่ตอนนี้`)];
+  if (!tasks.length)
+    return card("🎉 ไม่มีงานค้าง", "#16a34a", `คุณ${user.name} สบายแล้ว ไม่มีงานค้างอยู่ตอนนี้ครับ`);
   const rows = toRows(tasks, base);
   const overdue = rows.filter((r) => r.overdue).length;
   const sub = `ทั้งหมด ${tasks.length} งาน${overdue ? ` · เลยกำหนด ${overdue}` : ""}`;
@@ -151,7 +165,7 @@ async function myTasks(lineUserId: string): Promise<LineMessage[]> {
 /** "งานเลยกำหนดของฉัน" — the caller's not-done tasks past their due date. */
 async function myOverdue(lineUserId: string): Promise<LineMessage[]> {
   const user = await findLinkedUser(lineUserId);
-  if (!user) return [text(NOT_LINKED)];
+  if (!user) return notLinked();
   const base = appBaseUrl();
   const { gte } = bangkokDateToUtcRange(getBangkokDateString());
   const tasks = await prisma.task.findMany({
@@ -160,7 +174,8 @@ async function myOverdue(lineUserId: string): Promise<LineMessage[]> {
     orderBy: [{ dueDate: "asc" }],
     take: 20,
   });
-  if (!tasks.length) return [text(`🎉 คุณ${user.name} ไม่มีงานเลยกำหนดครับ`)];
+  if (!tasks.length)
+    return card("🎉 ไม่มีงานเลยกำหนด", "#16a34a", `คุณ${user.name} ไม่มีงานที่เลยกำหนดครับ เยี่ยมมาก!`);
   return [
     flex(
       taskListFlex(`⚠️ งานเลยกำหนดของคุณ${user.name}`, RED, `${tasks.length} งาน`, toRows(tasks, base), {
@@ -173,7 +188,7 @@ async function myOverdue(lineUserId: string): Promise<LineMessage[]> {
 /** "งานครบกำหนดวันนี้" — the caller's not-done tasks due today. */
 async function dueToday(lineUserId: string): Promise<LineMessage[]> {
   const user = await findLinkedUser(lineUserId);
-  if (!user) return [text(NOT_LINKED)];
+  if (!user) return notLinked();
   const base = appBaseUrl();
   const { gte, lt } = bangkokDateToUtcRange(getBangkokDateString());
   const tasks = await prisma.task.findMany({
@@ -182,7 +197,8 @@ async function dueToday(lineUserId: string): Promise<LineMessage[]> {
     orderBy: [{ priority: "desc" }],
     take: 20,
   });
-  if (!tasks.length) return [text(`วันนี้คุณ${user.name} ไม่มีงานครบกำหนดครับ 👍`)];
+  if (!tasks.length)
+    return card("📅 ครบกำหนดวันนี้", "#16a34a", `วันนี้คุณ${user.name} ไม่มีงานครบกำหนดครับ 👍`);
   return [
     flex(
       taskListFlex(`📅 ครบกำหนดวันนี้ · คุณ${user.name}`, TEAL, `${tasks.length} งาน`, toRows(tasks, base), {
@@ -200,11 +216,18 @@ async function leaveToday(): Promise<LineMessage[]> {
     select: { type: true, days: true, halfDayPeriod: true, user: { select: { name: true } } },
     orderBy: { user: { name: "asc" } },
   });
-  if (!leaves.length) return [text("🌴 วันนี้ไม่มีใครลา")];
-  const lines = leaves.map(
-    (l) => `• ${l.user.name} — ${leaveTypeLabel(l.type)} · ${leaveDaysLabel(l.days, l.halfDayPeriod)}`
-  );
-  return [text(`🌴 วันนี้มีคนลา ${leaves.length} คน\n\n${lines.join("\n")}`)];
+  if (!leaves.length)
+    return card("🌴 วันนี้ไม่มีใครลา", "#0891b2", "ทุกคนอยู่ครบวันนี้ครับ");
+  const entries: LeaveTodayEntry[] = leaves.map((l) => ({
+    name: l.user.name,
+    type: l.type,
+    days: l.days,
+    half: l.halfDayPeriod,
+  }));
+  const b = appBaseUrl();
+  return [
+    flex(leaveTodayFlex(new Date(), entries, b ? `${b}/calendar` : undefined)),
+  ];
 }
 
 /** "สถานะรายงานวันนี้" — who has / hasn't submitted today's daily report. */
@@ -212,7 +235,11 @@ async function reportToday(): Promise<LineMessage[]> {
   const today = getBangkokDateString();
   const { isWorkingDay, holiday } = await workdayInfo(today);
   if (!isWorkingDay) {
-    return [text(`วันนี้เป็นวันหยุด${holiday ? ` (${holiday.name})` : ""} — ไม่ต้องส่งรายงานครับ`)];
+    return card(
+      "🏖️ วันนี้เป็นวันหยุด",
+      "#0891b2",
+      `${holiday ? `${holiday.name} — ` : ""}ไม่ต้องส่งรายงานประจำวันครับ`
+    );
   }
   const { gte, lt } = bangkokDateToUtcRange(today);
   const [required, reports, leaves] = await Promise.all([
@@ -231,26 +258,22 @@ async function reportToday(): Promise<LineMessage[]> {
   const submitted = new Set(reports.map((r) => r.authorId));
   const expected = required.filter((u) => !onLeave.has(u.id));
   const missing = expected.filter((u) => !submitted.has(u.id));
-  const head = `📊 รายงานวันนี้ · ส่งแล้ว ${expected.length - missing.length}/${expected.length}`;
-  const body =
-    missing.length === 0
-      ? "🎉 ส่งครบทุกคนแล้ว"
-      : `ยังไม่ส่ง (${missing.length}):\n${missing.map((u) => `• ${u.name}`).join("\n")}`;
   const base = appBaseUrl();
-  return [text(`${head}\n\n${body}${base ? `\n\n🔗 ${base}/reports` : ""}`)];
-}
-
-/** Menu / help. */
-function help(): LineMessage[] {
   return [
-    text(
-      "🤖 เมนูบอท DevPulse — พิมพ์คำสั่ง หรือกดปุ่มเมนูด้านล่าง:\n" +
-        "• งานของฉัน / งานเลยกำหนด / งานครบกำหนดวันนี้\n" +
-        "• ใครลาวันนี้ / สถานะรายงานวันนี้\n" +
-        "• เสร็จ <ชื่องาน> — ปิดงานให้เลย\n" +
-        "• งานของ <ชื่อ> — ดูงานของสมาชิก (สำหรับหัวหน้า)"
+    flex(
+      reportStatusFlex(
+        expected.length - missing.length,
+        expected.length,
+        missing.map((u) => u.name),
+        base ? `${base}/reports` : undefined
+      )
     ),
   ];
+}
+
+/** Menu / help card. */
+function help(): LineMessage[] {
+  return [flex(botHelpFlex())];
 }
 
 /** Interactive: "เสร็จ <ชื่องาน>" closes the caller's matching task. */
@@ -259,9 +282,10 @@ export async function closeTaskByName(
   query: string
 ): Promise<LineMessage[]> {
   const user = await findLinkedUser(lineUserId);
-  if (!user) return [text(NOT_LINKED)];
+  if (!user) return notLinked();
   const q = query.trim();
-  if (!q) return [text('พิมพ์ชื่องานต่อท้าย เช่น: "เสร็จ ทำหน้า login"')];
+  if (!q)
+    return card("✅ ปิดงาน", "#0d9488", 'พิมพ์ชื่องานต่อท้ายนะครับ เช่น\n"เสร็จ ทำหน้า login"');
   const candidates = await prisma.task.findMany({
     where: {
       status: { not: "DONE" },
@@ -272,10 +296,10 @@ export async function closeTaskByName(
     take: 6,
   });
   if (!candidates.length)
-    return [text(`ไม่พบงานที่ตรงกับ "${q}" ในงานที่ยังไม่เสร็จของคุณครับ`)];
+    return card("ไม่พบงาน", "#d97706", `ไม่พบงานที่ตรงกับ "${q}" ในงานที่ยังไม่เสร็จของคุณครับ`);
   if (candidates.length > 1) {
     const lines = candidates.map((t) => `• ${t.title}`).join("\n");
-    return [text(`พบหลายงานที่ตรงกัน — พิมพ์ให้ชัดเจนขึ้นนะครับ:\n${lines}`)];
+    return card("พบหลายงานที่ตรงกัน", "#d97706", `พิมพ์ให้ชัดเจนขึ้นนะครับ:\n${lines}`);
   }
   const task = candidates[0];
   await prisma.task.update({
@@ -290,11 +314,10 @@ export async function closeTaskByName(
     entityId: task.id,
   });
   const base = appBaseUrl();
-  return [
-    text(
-      `✅ ปิดงาน "${task.title}" เรียบร้อยแล้ว 🎉${base ? `\n🔗 ${base}/tasks?task=${task.id}` : ""}`
-    ),
-  ];
+  return card("✅ ปิดงานเรียบร้อย 🎉", "#16a34a", task.title, {
+    url: base ? `${base}/tasks?task=${task.id}` : undefined,
+    footerLabel: "เปิดดูงาน ↗",
+  });
 }
 
 /** "งานของ <ชื่อ>" — a manager can view another member's open tasks. */
@@ -306,16 +329,16 @@ export async function memberTasks(
     where: { lineUserId },
     select: { id: true, roleRef: { select: { code: true, permissions: true } } },
   });
-  if (!caller) return [text(NOT_LINKED)];
+  if (!caller) return notLinked();
   const perms = expandPermissions(caller.roleRef?.permissions, caller.roleRef?.code);
   if (!perms.has("TEAM_MANAGE")) {
-    return [text('ดูได้เฉพาะงานของตัวเองครับ — พิมพ์ "งานของฉัน"')];
+    return card("เฉพาะหัวหน้า", "#d97706", 'ดูได้เฉพาะงานของตัวเองครับ — พิมพ์ "งานของฉัน"');
   }
   const target = await prisma.user.findFirst({
     where: { active: true, name: { contains: name, mode: "insensitive" } },
     select: { id: true, name: true },
   });
-  if (!target) return [text(`ไม่พบสมาชิกชื่อ "${name}" ครับ`)];
+  if (!target) return card("ไม่พบสมาชิก", "#d97706", `ไม่พบสมาชิกชื่อ "${name}" ครับ`);
   const base = appBaseUrl();
   const tasks = await prisma.task.findMany({
     where: { status: { not: "DONE" }, ...assignedTo(target.id) },
@@ -323,7 +346,8 @@ export async function memberTasks(
     orderBy: [{ dueDate: "asc" }],
     take: 15,
   });
-  if (!tasks.length) return [text(`${target.name} ไม่มีงานค้างอยู่ตอนนี้ 👍`)];
+  if (!tasks.length)
+    return card("🎉 ไม่มีงานค้าง", "#16a34a", `${target.name} ไม่มีงานค้างอยู่ตอนนี้ 👍`);
   const rows = toRows(tasks, base);
   const overdue = rows.filter((r) => r.overdue).length;
   return [
