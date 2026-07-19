@@ -8,6 +8,7 @@ import {
   startOfBangkokDayUtc,
 } from "../lib/date";
 import { workdayInfo } from "../lib/workday";
+import { onLeaveUserIds } from "../lib/leave-status";
 
 const NO_BLOCKER = new Set(["", "ไม่มี", "—", "วันนี้ไม่มี", "-", "ไม่มีครับ", "ไม่มีค่ะ"]);
 
@@ -207,9 +208,15 @@ export async function insights(_req: Request, res: Response) {
   // On a non-working day (weekend / company holiday) no daily report is
   // expected — nobody is counted as missing, and the UI shows a holiday state.
   const { isWorkingDay, holiday } = await workdayInfo(today);
+  // People on APPROVED leave today aren't expected to report — exclude them from
+  // "missing" and flag them as on-leave in the workload.
+  const onLeave = await onLeaveUserIds(today);
   const missing = isWorkingDay
-    ? requiredReporters.filter((u) => !submittedIds.has(u.id))
+    ? requiredReporters.filter((u) => !submittedIds.has(u.id) && !onLeave.has(u.id))
     : [];
+  const onLeaveMembers = requiredReporters.filter(
+    (u) => onLeave.has(u.id) && !submittedIds.has(u.id)
+  );
 
   // Top blockers from recent reports (skip "no blocker" placeholders).
   const topBlockers = recentBlockerReports
@@ -255,6 +262,7 @@ export async function insights(_req: Request, res: Response) {
         name: u.name,
         avatarKey: u.avatarKey,
         requiresDailyReport: u.requiresDailyReport,
+        onLeave: onLeave.has(u.id),
         ...c,
         open,
         total: open + c.done,
@@ -281,6 +289,7 @@ export async function insights(_req: Request, res: Response) {
       totalMembers: requiredReporters.length,
       submitted,
       missing,
+      onLeave: onLeaveMembers,
       isWorkingDay,
       holiday,
     },

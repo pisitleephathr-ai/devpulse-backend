@@ -4,6 +4,7 @@ import { userMiniSelect } from "../lib/selects";
 import { notifyMany } from "../lib/notify";
 import { getBangkokDateString, bangkokDateToUtcRange } from "../lib/date";
 import { workdayInfo } from "../lib/workday";
+import { onLeaveUserIds } from "../lib/leave-status";
 
 const NO_BLOCKER = new Set(["", "ไม่มี", "—", "-", "วันนี้ไม่มี", "ไม่มีครับ", "ไม่มีค่ะ"]);
 function cleanBlocker(s: string) {
@@ -57,13 +58,21 @@ export async function standup(req: Request, res: Response) {
   // On a non-working day (weekend / company holiday) no report is expected, so
   // nobody is "missing" — the UI shows a holiday state instead.
   const { isWorkingDay, holiday } = await workdayInfo(dateStr);
+  // People on APPROVED leave that day aren't expected to report and are shown as
+  // "on leave" instead of "missing".
+  const onLeave = await onLeaveUserIds(dateStr);
+  const strip = ({ requiresDailyReport, ...u }: (typeof activeUsers)[number]) => u;
   const missingUsers = (isWorkingDay
-    ? required.filter((u) => !submittedIds.has(u.id))
+    ? required.filter((u) => !submittedIds.has(u.id) && !onLeave.has(u.id))
     : []
-  ).map(({ requiresDailyReport, ...u }) => u);
+  ).map(strip);
+  // On-leave, required members who didn't submit — surfaced as a separate group.
+  const onLeaveUsers = required
+    .filter((u) => onLeave.has(u.id) && !submittedIds.has(u.id))
+    .map(strip);
   const exemptUsers = activeUsers
     .filter((u) => !u.requiresDailyReport)
-    .map(({ requiresDailyReport, ...u }) => u);
+    .map(strip);
 
   // Related tasks now come from the explicit report↔task links a member chose
   // (deduped per user, capped for a compact standup view). Reports without any
@@ -143,6 +152,7 @@ export async function standup(req: Request, res: Response) {
       // unique required users who submitted (not raw report count)
       submitted: submittedReports.length,
       missing: missingUsers.length,
+      onLeave: onLeaveUsers.length,
       exempt: exemptUsers.length,
       totalRequired: required.length,
       blockers: blockers.length,
@@ -150,6 +160,7 @@ export async function standup(req: Request, res: Response) {
     },
     submittedReports,
     missingUsers,
+    onLeaveUsers,
     exemptUsers,
     blockers,
     isWorkingDay,
