@@ -11,7 +11,11 @@
  * deployed environment). See src/lib/line-richmenu.ts.
  */
 import { readFile } from "node:fs/promises";
-import { clearRichMenus, publishRichMenu } from "../lib/line-richmenu";
+import {
+  clearRichMenus,
+  publishRichMenu,
+  optimizeForLine,
+} from "../lib/line-richmenu";
 
 async function main() {
   const arg = process.argv[2];
@@ -22,8 +26,19 @@ async function main() {
     return;
   }
 
-  const image = arg ? await readFile(arg) : undefined;
-  console.log(image ? "Publishing with provided image…" : "Generating image + publishing…");
+  let image: Buffer | undefined;
+  if (arg) {
+    const raw = await readFile(arg);
+    // Fit any provided image to 2500×1686 ≤1MB (LINE limits) via Cloudinary.
+    image = raw.byteLength > 1_000_000 ? await optimizeForLine(raw) : raw;
+    console.log(
+      `Publishing provided image (${Math.round(raw.byteLength / 1024)}KB → ${Math.round(
+        image.byteLength / 1024
+      )}KB)…`
+    );
+  } else {
+    console.log("Generating image + publishing…");
+  }
   const { richMenuId, buttons } = await publishRichMenu(image);
   console.log(`✅ rich menu live: ${richMenuId}`);
   console.log(`   buttons → ${buttons.join(", ")}`);
