@@ -6,6 +6,7 @@ import {
   getBangkokDateString,
   bangkokDateToUtcRange,
   startOfBangkokDayUtc,
+  getBangkokWeekday,
 } from "../lib/date";
 import { workdayInfo } from "../lib/workday";
 import { onLeaveUserIds } from "../lib/leave-status";
@@ -357,4 +358,87 @@ export async function reportTrend(req: Request, res: Response) {
   }
 
   res.json({ days, required, series });
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
+
+/**
+ * GET /api/dashboard/velocity?weeks=8 — weekly delivery velocity (tasks
+ * completed per Bangkok week, Monday-anchored) and average cycle time over the
+ * same window. Cycle time = time from a task's first status change (i.e. when
+ * work started — moving it out of the initial column) to its completion,
+ * falling back to createdAt when a task has no recorded status change.
+ */
+export async function velocity(req: Request, res: Response) {
+  const weeks = Math.min(12, Math.max(1, Number(req.query.weeks) || 8));
+
+  // Monday 00:00 (Bangkok) of the current week, as a UTC instant.
+  const todayStartUtc = startOfBangkokDayUtc(getBangkokDateString());
+  const sinceMonday = (getBangkokWeekday() + 6) % 7; // Mon→0 … Sun→6
+  const currentMondayUtc = new Date(todayStartUtc.getTime() - sinceMonday * DAY_MS);
+  const startUtc = new Date(currentMondayUtc.getTime() - (weeks - 1) * WEEK_MS);
+
+  // Tasks completed within the window (velocity + cycle-time population).
+  const doneTasks = await prisma.task.findMany({
+    where: { status: "DONE", completedAt: { gte: startUtc } },
+    select: { id: true, createdAt: true, completedAt: true },
+  });
+
+  // Earliest "task.status" activity per task = when it first left its column.
+  const ids = doneTasks.map((t) => t.id);
+  const logs = ids.length
+    ? await prisma.activityLog.findMany({
+        where: { action: "task.status", entityId: { in: ids } },
+        select: { entityId: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      })
+    : [];
+  const firstMove = new Map<string, Date>();
+  for (const l of logs) {
+    if (l.entityId && !firstMove.has(l.entityId)) firstMove.set(l.entityId, l.createdAt);
+  }
+
+  // Cycle time (days) per completed task.
+  const cycleDays: number[] = [];
+  for (const t of doneTasks) {
+    if (!t.completedAt) continue;
+    const start = firstMove.get(t.id) ?? t.createdAt;
+    const ms = t.completedAt.getTime() - start.getTime();
+    if (ms >= 0) cycleDays.push(ms / DAY_MS);
+  }
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+  const avgDays = cycleDays.length
+    ? round1(cycleDays.reduce((s, d) => s + d, 0) / cycleDays.length)
+    : null;
+  const sorted = [...cycleDays].sort((a, b) => a - b);
+  const medianDays = sorted.length
+    ? round1(
+        sorted.length % 2
+          ? sorted[(sorted.length - 1) / 2]
+          : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+      )
+    : null;
+
+  // Weekly velocity buckets, oldest → newest.
+  const series: { weekStart: string; completed: number }[] = [];
+  for (let i = 0; i < weeks; i++) {
+    const wStart = new Date(startUtc.getTime() + i * WEEK_MS);
+    const wEnd = new Date(wStart.getTime() + WEEK_MS);
+    const completed = doneTasks.filter(
+      (t) => t.completedAt && t.completedAt >= wStart && t.completedAt < wEnd
+    ).length;
+    series.push({ weekStart: getBangkokDateString(wStart), completed });
+  }
+  const totalCompleted = series.reduce((s, w) => s + w.completed, 0);
+
+  res.json({
+    weeks,
+    cycleTime: { avgDays, medianDays, count: cycleDays.length },
+    velocity: {
+      series,
+      avgPerWeek: round1(totalCompleted / weeks),
+      total: totalCompleted,
+    },
+  });
 }
