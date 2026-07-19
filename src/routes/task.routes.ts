@@ -4,7 +4,8 @@ import * as comments from "../controllers/comment.controller";
 import * as checklist from "../controllers/checklist.controller";
 import * as attachments from "../controllers/attachment.controller";
 import { authenticate } from "../middleware/auth";
-import { isManagerOrAdmin } from "../middleware/authorize";
+import { isManagerOrAdmin, requirePermission } from "../middleware/authorize";
+import { PERMISSIONS } from "../lib/roles";
 import { attachmentLimiter } from "../middleware/rateLimit";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/error";
@@ -36,8 +37,14 @@ router.use(authenticate);
 router.get("/", validate({ query: taskQuerySchema }), asyncHandler(ctrl.listTasks));
 router.get("/:id", validate({ params: idParam }), asyncHandler(ctrl.getTask));
 
-// Create/delete are manager/admin only.
-router.post("/", isManagerOrAdmin, validate({ body: createTaskSchema }), asyncHandler(ctrl.createTask));
+// Create: managers/admins, or any role granted the TASK_CREATE capability.
+router.post(
+  "/",
+  requirePermission(PERMISSIONS.TASK_CREATE),
+  validate({ body: createTaskSchema }),
+  asyncHandler(ctrl.createTask)
+);
+// Delete stays manager/admin only.
 router.delete("/:id", isManagerOrAdmin, validate({ params: idParam }), asyncHandler(ctrl.deleteTask));
 
 // Update / status change: manager/admin (any task) or the assignee (own task).

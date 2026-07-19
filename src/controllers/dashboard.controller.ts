@@ -68,6 +68,9 @@ export async function summary(_req: Request, res: Response) {
           { action: { startsWith: "report." } },
           { action: { in: ["leave.approve", "leave.approved"] } },
         ],
+        // Deleting a board attachment is routine housekeeping — keep it out of
+        // the shared feed (uploads still show).
+        NOT: [{ action: "task.attachment.delete" }],
       },
       orderBy: { createdAt: "desc" },
       take: 6,
