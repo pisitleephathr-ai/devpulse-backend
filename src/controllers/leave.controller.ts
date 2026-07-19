@@ -4,7 +4,12 @@ import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
 import { notify, notifyMany } from "../lib/notify";
-import { pushFlexToLineGroup, appBaseUrl, getLinePrefs } from "../lib/line";
+import {
+  pushFlexToLineGroup,
+  pushFlexToUser,
+  appBaseUrl,
+  getLinePrefs,
+} from "../lib/line";
 import { leaveFlex } from "../lib/line-messages";
 import { isTeamManager } from "../lib/authz";
 import { AppError } from "../middleware/error";
@@ -234,6 +239,25 @@ async function decide(req: Request, res: Response, status: LeaveStatus) {
         entityType: "leave",
         entityId: leave.id,
       });
+      // DM the requester the decision card on their personal LINE (best-effort).
+      if ((await getLinePrefs()).notifyLeave) {
+        const base = appBaseUrl();
+        const card = leaveFlex(
+          status === "APPROVED" ? "APPROVED" : "REJECTED",
+          {
+            userName: leave.user.name,
+            type: leave.type,
+            startDate: leave.startDate,
+            endDate: leave.endDate,
+            days: leave.days,
+            halfDayPeriod: leave.halfDayPeriod,
+            reason: leave.reason,
+            actorName: leave.reviewedBy?.name ?? null,
+          },
+          base ? `${base}/leaves` : undefined
+        );
+        await pushFlexToUser(leave.userId, card.altText, card.contents);
+      }
     }
     await pushLeaveCard(status === "APPROVED" ? "APPROVED" : "REJECTED", leave);
   } catch (err) {

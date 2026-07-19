@@ -23,4 +23,10 @@ router.patch(
   asyncHandler(ctrl.changePassword)
 );
 
+// Personal LINE account linking (own account only).
+router.get("/line", asyncHandler(ctrl.getLineStatus));
+router.post("/line/link-code", passwordLimiter, asyncHandler(ctrl.createLineLinkCode));
+router.post("/line/test", asyncHandler(ctrl.testLineDm));
+router.delete("/line", asyncHandler(ctrl.unlinkLine));
+
 export default router;

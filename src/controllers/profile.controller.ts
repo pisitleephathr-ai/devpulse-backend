@@ -3,6 +3,9 @@ import { prisma } from "../lib/prisma";
 import { hashPassword, verifyPassword } from "../lib/password";
 import { userPublicSelect, serializeUser } from "../lib/selects";
 import { logActivity } from "../lib/activity";
+import { env } from "../lib/env";
+import { pushMessagesToUser } from "../lib/line";
+import { issueLinkCode } from "../lib/line-link";
 import { AppError } from "../middleware/error";
 import type {
   ChangePasswordInput,
@@ -66,4 +69,59 @@ export async function changePassword(req: Request, res: Response) {
   });
 
   res.json({ message: "เปลี่ยนรหัสผ่านเรียบร้อยแล้ว" });
+}
+
+/* ------------------------- Personal LINE linking ------------------------- */
+
+/** GET /api/profile/line — the current user's personal-LINE link status. */
+export async function getLineStatus(req: Request, res: Response) {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user!.id },
+    select: { lineUserId: true, lineLinkedAt: true },
+  });
+  res.json({
+    linked: !!user?.lineUserId,
+    linkedAt: user?.lineLinkedAt ?? null,
+    lineEnabled: env.LINE_ENABLED,
+    addFriendUrl: env.LINE_ADD_FRIEND_URL ?? null,
+  });
+}
+
+/**
+ * POST /api/profile/line/link-code — issue (or replace) a short-lived code the
+ * user sends to the OA in a 1:1 chat to bind their personal LINE account.
+ */
+export async function createLineLinkCode(req: Request, res: Response) {
+  const { code, expiresAt } = await issueLinkCode(req.user!.id);
+  res.json({ code, expiresAt, addFriendUrl: env.LINE_ADD_FRIEND_URL ?? null });
+}
+
+/** POST /api/profile/line/test — send a test DM to verify the link works. */
+export async function testLineDm(req: Request, res: Response) {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user!.id },
+    select: { lineUserId: true, name: true },
+  });
+  if (!user?.lineUserId) throw new AppError(400, "ยังไม่ได้เชื่อมต่อ LINE");
+  if (!env.LINE_ENABLED) throw new AppError(503, "ระบบ LINE ยังไม่เปิดใช้งาน");
+  await pushMessagesToUser(req.user!.id, [
+    {
+      type: "text",
+      text: `🔔 ทดสอบการแจ้งเตือนส่วนตัวจาก DevPulse\nสวัสดีคุณ${user.name} — การเชื่อมต่อทำงานปกติแล้วครับ`,
+    },
+  ]);
+  res.json({ sent: true });
+}
+
+/** DELETE /api/profile/line — unlink the current user's personal LINE account. */
+export async function unlinkLine(req: Request, res: Response) {
+  await prisma.user.update({
+    where: { id: req.user!.id },
+    data: { lineUserId: null, lineLinkedAt: null },
+  });
+  // Drop any pending code too (best-effort).
+  await prisma.lineLinkCode
+    .deleteMany({ where: { userId: req.user!.id } })
+    .catch(() => {});
+  res.json({ linked: false });
 }

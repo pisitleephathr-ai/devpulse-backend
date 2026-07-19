@@ -24,6 +24,10 @@ const schema = z.object({
   // Optional manual override; when empty the group id is auto-captured from a
   // webhook event and stored on TeamSetting.lineGroupId.
   LINE_GROUP_ID: z.string().optional(),
+  // Optional add-friend URL for the OA (e.g. https://line.me/R/ti/p/@basicid),
+  // shown on the profile page so users can add the bot before linking. Purely
+  // informational — linking works without it.
+  LINE_ADD_FRIEND_URL: z.string().optional(),
   // Shared secret for the external-cron endpoint (POST /api/cron/line-summaries).
   // When set, callers must present it; lets an external scheduler drive the
   // daily summaries even while the server would otherwise be idle/asleep.

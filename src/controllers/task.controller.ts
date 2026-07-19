@@ -4,7 +4,12 @@ import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
 import { notifyMany } from "../lib/notify";
-import { pushFlexToLineGroup, appBaseUrl, getLinePrefs } from "../lib/line";
+import {
+  pushFlexToLineGroup,
+  pushFlexToUser,
+  appBaseUrl,
+  getLinePrefs,
+} from "../lib/line";
 import { taskCreatedFlex, taskStatusFlex } from "../lib/line-messages";
 import { isTeamManager, hasPermission } from "../lib/authz";
 import { PERMISSIONS } from "../lib/roles";
@@ -205,6 +210,10 @@ export async function createTask(req: Request, res: Response) {
         base ? `${base}/tasks?task=${task.id}` : undefined
       );
       await pushFlexToLineGroup(card.altText, card.contents);
+      // Also DM each assignee (except the creator) on their personal LINE.
+      for (const uid of assigneeIds.filter((id) => id !== req.user!.id)) {
+        await pushFlexToUser(uid, card.altText, card.contents);
+      }
     }
   } catch (err) {
     console.warn("[task.create] post-commit side-effect failed:", err);
@@ -308,6 +317,28 @@ export async function updateTask(req: Request, res: Response) {
       entityType: "task",
       entityId: id,
     });
+    // DM each newly-added assignee on their personal LINE (best-effort).
+    if (added.length && task && (await getLinePrefs()).notifyNewTask) {
+      const actor = await prisma.user.findUnique({
+        where: { id: req.user!.id },
+        select: { name: true },
+      });
+      const base = appBaseUrl();
+      const card = taskCreatedFlex(
+        {
+          title: task.title,
+          projectName: task.project.name,
+          projectCode: task.project.code,
+          priority: task.priority,
+          status: task.status,
+          dueDate: task.dueDate,
+          assignees: task.assignees.map((a) => a.user.name),
+          actorName: actor?.name ?? "ระบบ",
+        },
+        base ? `${base}/tasks?task=${task.id}` : undefined
+      );
+      for (const uid of added) await pushFlexToUser(uid, card.altText, card.contents);
+    }
   }
 
   // If this edit changed the status to TODO/DONE, announce it on LINE too — so

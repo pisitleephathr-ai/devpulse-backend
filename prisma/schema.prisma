@@ -78,6 +78,12 @@ model User {
   /// whether this user is expected to submit a daily report (drives the
   /// dashboard "missing report" calculation). Some users are exempt.
   requiresDailyReport Boolean @default(true)
+  /// LINE Messaging API user id for this user (the id the OA sees), set once the
+  /// user links their personal LINE via a link code. Enables per-user DM push.
+  /// Server-only — never returned in public user payloads.
+  lineUserId String?  @unique
+  /// when the personal LINE account was linked (for display + audit)
+  lineLinkedAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -92,9 +98,26 @@ model User {
   taskAssignedBy  TaskAssignee[] @relation("TaskAssignedBy")
   uploadedAttachments TaskAttachment[] @relation("AttachmentUploader")
   uploadIntents  UploadIntent[]
+  lineLinkCode   LineLinkCode?
 
   @@index([role])
   @@index([roleId])
+}
+
+/// Short-lived code a user generates in their profile to link their personal
+/// LINE account. They send it to the OA in a 1:1 chat; the webhook matches an
+/// unexpired code to bind that LINE user id to this user. Single active code per
+/// user (regenerating replaces it); consumed (deleted) on a successful match.
+model LineLinkCode {
+  /// the code the user types into the LINE chat (uppercase, unambiguous chars)
+  code      String   @id
+  userId    String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
 }
 
 /// Dynamic, admin-managed roles. Replaces the hardcoded UserRole enum.
