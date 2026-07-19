@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { isSameBangkokDay } from "../lib/date";
 
-const type = z.enum(["VACATION", "SICK", "PERSONAL", "PARENTAL"]);
+// Free-form leave-type name (matches a LeaveTypePolicy.name). Length-bounded.
+const type = z.string().min(1, "กรุณาเลือกประเภทการลา").max(50);
 const status = z.enum(["PENDING", "APPROVED", "REJECTED"]);
 const halfDayPeriod = z.enum(["MORNING", "AFTERNOON"]);
 

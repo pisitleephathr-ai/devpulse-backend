@@ -76,12 +76,15 @@ const include = {
   reviewedBy: { select: userMiniSelect },
 };
 
+// Legacy enum-code → Thai. New leave types already carry their (freeform) name,
+// so unknown codes fall through to the value itself.
 const TYPE_LABEL: Record<string, string> = {
   VACATION: "ลาพักร้อน",
   SICK: "ลาป่วย",
   PERSONAL: "ลากิจ",
   PARENTAL: "ลาเลี้ยงดูบุตร",
 };
+const typeLabel = (t: string) => TYPE_LABEL[t] ?? t;
 
 function inclusiveDays(start: Date, end: Date) {
   const ms = end.getTime() - start.getTime();
@@ -158,7 +161,7 @@ export async function createLeave(req: Request, res: Response) {
       {
         userId: req.user!.id,
         action: "leave.create",
-        message: `${created.user.name} ขอ${TYPE_LABEL[created.type]}`,
+        message: `${created.user.name} ขอ${typeLabel(created.type)}`,
         entityType: "leave",
         entityId: created.id,
       },
@@ -173,7 +176,7 @@ export async function createLeave(req: Request, res: Response) {
     await notifyMany(recipients, {
       type: "leave.submitted",
       title: "คำขอลาใหม่",
-      message: `${leave.user.name} ขอ${TYPE_LABEL[leave.type]} ${daysLabel(leave.days, leave.halfDayPeriod)}`,
+      message: `${leave.user.name} ขอ${typeLabel(leave.type)} ${daysLabel(leave.days, leave.halfDayPeriod)}`,
       entityType: "leave",
       entityId: leave.id,
     });
@@ -210,7 +213,7 @@ async function decide(req: Request, res: Response, status: LeaveStatus) {
       {
         userId: req.user!.id,
         action: status === "APPROVED" ? "leave.approve" : "leave.reject",
-        message: `${verb}คำขอ${TYPE_LABEL[updated.type]}ของ ${existing.user.name}`,
+        message: `${verb}คำขอ${typeLabel(updated.type)}ของ ${existing.user.name}`,
         entityType: "leave",
         entityId: updated.id,
       },
@@ -227,7 +230,7 @@ async function decide(req: Request, res: Response, status: LeaveStatus) {
         userId: leave.userId,
         type: status === "APPROVED" ? "leave.approved" : "leave.rejected",
         title: status === "APPROVED" ? "คำขอลาได้รับอนุมัติ" : "คำขอลาถูกปฏิเสธ",
-        message: `คำขอ${TYPE_LABEL[leave.type]}ของคุณถูก${verb}แล้ว`,
+        message: `คำขอ${typeLabel(leave.type)}ของคุณถูก${verb}แล้ว`,
         entityType: "leave",
         entityId: leave.id,
       });
@@ -270,7 +273,7 @@ export async function deleteLeave(req: Request, res: Response) {
   await logActivity({
     userId: req.user!.id,
     action: "leave.delete",
-    message: `ยกเลิกคำขอ${TYPE_LABEL[existing.type]}ของ ${existing.user.name}`,
+    message: `ยกเลิกคำขอ${typeLabel(existing.type)}ของ ${existing.user.name}`,
     entityType: "leave",
     entityId: existing.id,
   });

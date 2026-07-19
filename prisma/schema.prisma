@@ -40,13 +40,6 @@ enum TaskPriority {
   LOW
 }
 
-enum LeaveType {
-  VACATION
-  SICK
-  PERSONAL
-  PARENTAL
-}
-
 enum LeaveStatus {
   PENDING
   APPROVED
@@ -378,7 +371,9 @@ model UploadIntent {
 
 model LeaveRequest {
   id        String      @id @default(cuid())
-  type      LeaveType
+  /// leave-type name — matches a LeaveTypePolicy.name (freeform, admin-configured).
+  /// Legacy rows may hold the old enum codes (VACATION/SICK/PERSONAL/PARENTAL).
+  type      String
   startDate DateTime
   endDate   DateTime
   /// number of leave days; supports halves (0.5) for half-day leave
