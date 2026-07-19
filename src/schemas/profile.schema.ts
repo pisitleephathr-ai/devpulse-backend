@@ -25,6 +25,7 @@ export const linePrefsSchema = z
   .object({
     taskAssigned: z.boolean().optional(),
     leaveDecision: z.boolean().optional(),
+    leaveRequest: z.boolean().optional(),
     reportReminder: z.boolean().optional(),
   })
   .refine((d) => Object.keys(d).length > 0, {

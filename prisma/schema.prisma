@@ -89,6 +89,8 @@ model User {
   lineNotifyTaskAssigned   Boolean @default(true)
   lineNotifyLeaveDecision  Boolean @default(true)
   lineNotifyReportReminder Boolean @default(true)
+  /// (for approvers) DM when a new leave request is submitted
+  lineNotifyLeaveRequest   Boolean @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 

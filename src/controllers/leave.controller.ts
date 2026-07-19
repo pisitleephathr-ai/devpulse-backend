@@ -186,6 +186,30 @@ export async function createLeave(req: Request, res: Response) {
       entityId: leave.id,
     });
     await pushLeaveCard("PENDING", leave);
+    // DM approvers on their personal LINE (per-user pref + role allow).
+    if (recipients.length) {
+      const base = appBaseUrl();
+      const card = leaveFlex(
+        "PENDING",
+        {
+          userName: leave.user.name,
+          type: leave.type,
+          startDate: leave.startDate,
+          endDate: leave.endDate,
+          days: leave.days,
+          halfDayPeriod: leave.halfDayPeriod,
+          reason: leave.reason,
+          actorName: null,
+        },
+        base ? `${base}/leaves` : undefined
+      );
+      await pushFlexToUsersWithPref(
+        recipients,
+        "leaveRequest",
+        card.altText,
+        card.contents
+      );
+    }
   } catch (err) {
     console.warn("[leave.create] post-commit side-effect failed:", err);
   }

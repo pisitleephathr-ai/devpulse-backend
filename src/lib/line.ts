@@ -224,6 +224,7 @@ export async function pushToUsersWithPref(
         lineUserId: true,
         lineNotifyTaskAssigned: true,
         lineNotifyLeaveDecision: true,
+        lineNotifyLeaveRequest: true,
         lineNotifyReportReminder: true,
         roleRef: { select: { lineNotifications: true } },
       },

@@ -13,7 +13,8 @@
 
 export const LINE_NOTIF_TYPES = [
   { key: "taskAssigned", column: "lineNotifyTaskAssigned", label: "งานที่ได้รับมอบหมาย" },
-  { key: "leaveDecision", column: "lineNotifyLeaveDecision", label: "ผลอนุมัติการลา" },
+  { key: "leaveDecision", column: "lineNotifyLeaveDecision", label: "ผลอนุมัติการลา (ของฉัน)" },
+  { key: "leaveRequest", column: "lineNotifyLeaveRequest", label: "คำขอลาใหม่ (สำหรับผู้อนุมัติ)" },
   { key: "reportReminder", column: "lineNotifyReportReminder", label: "เตือนส่งรายงานประจำวัน" },
 ] as const;
 

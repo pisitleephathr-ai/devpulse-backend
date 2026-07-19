@@ -84,6 +84,7 @@ export async function getLineStatus(req: Request, res: Response) {
       lineLinkedAt: true,
       lineNotifyTaskAssigned: true,
       lineNotifyLeaveDecision: true,
+      lineNotifyLeaveRequest: true,
       lineNotifyReportReminder: true,
       roleRef: { select: { lineNotifications: true } },
     },
@@ -98,6 +99,7 @@ export async function getLineStatus(req: Request, res: Response) {
     prefs: {
       taskAssigned: user?.lineNotifyTaskAssigned ?? true,
       leaveDecision: user?.lineNotifyLeaveDecision ?? true,
+      leaveRequest: user?.lineNotifyLeaveRequest ?? true,
       reportReminder: user?.lineNotifyReportReminder ?? true,
     },
   });
@@ -115,6 +117,9 @@ export async function updateLinePrefs(req: Request, res: Response) {
       ...(body.leaveDecision !== undefined && {
         lineNotifyLeaveDecision: body.leaveDecision,
       }),
+      ...(body.leaveRequest !== undefined && {
+        lineNotifyLeaveRequest: body.leaveRequest,
+      }),
       ...(body.reportReminder !== undefined && {
         lineNotifyReportReminder: body.reportReminder,
       }),
@@ -122,6 +127,7 @@ export async function updateLinePrefs(req: Request, res: Response) {
     select: {
       lineNotifyTaskAssigned: true,
       lineNotifyLeaveDecision: true,
+      lineNotifyLeaveRequest: true,
       lineNotifyReportReminder: true,
     },
   });
@@ -129,6 +135,7 @@ export async function updateLinePrefs(req: Request, res: Response) {
     prefs: {
       taskAssigned: user.lineNotifyTaskAssigned,
       leaveDecision: user.lineNotifyLeaveDecision,
+      leaveRequest: user.lineNotifyLeaveRequest,
       reportReminder: user.lineNotifyReportReminder,
     },
   });
