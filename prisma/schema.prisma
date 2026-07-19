@@ -198,12 +198,39 @@ model DailyReport {
   authorId  String
   project   Project @relation(fields: [projectId], references: [id])
   projectId String
-  /// optional board tasks this report references (additive, never required)
+  /// optional board tasks this report references (additive, never required).
+  /// Kept in sync with the distinct task links of `items` for backward compat.
   relatedTasks DailyReportRelatedTask[]
+  /// the per-task work items of the report (work + progress% + note). The
+  /// primary content; did/plan/blockers/summary above are DERIVED from these.
+  items     DailyReportItem[]
 
   @@index([authorId])
   @@index([projectId])
   @@index([date])
+}
+
+/// One line of a daily report: a piece of work, how far it got today (0-100%),
+/// and an optional note/blocker. Optionally linked to a board task.
+model DailyReportItem {
+  id        String   @id @default(cuid())
+  /// work description (free text, or the linked task's title)
+  title     String
+  /// percent complete for the day, 0-100
+  progress  Int      @default(0)
+  /// optional per-item note / blocker
+  note      String   @default("")
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  report   DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportId String
+  /// optional link to a board task
+  task     Task?   @relation("ReportItemTask", fields: [taskId], references: [id], onDelete: SetNull)
+  taskId   String?
+
+  @@index([reportId])
+  @@index([taskId])
 }
 
 model Task {
@@ -234,6 +261,7 @@ model Task {
   checklist   TaskChecklistItem[]
   /// daily reports that optionally reference this task (additive)
   reportRelations DailyReportRelatedTask[]
+  reportItems     DailyReportItem[] @relation("ReportItemTask")
 
   @@index([projectId])
   @@index([assigneeId])

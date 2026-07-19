@@ -46,6 +46,10 @@ export async function standup(req: Request, res: Response) {
           },
           orderBy: { createdAt: "asc" },
         },
+        items: {
+          select: { id: true, title: true, progress: true, note: true },
+          orderBy: { order: "asc" },
+        },
       },
       orderBy: { createdAt: "asc" },
     }),
@@ -111,6 +115,7 @@ export async function standup(req: Request, res: Response) {
     status: string;
     reportCount: number;
     tasks: NonNullable<ReturnType<typeof tasksByUser.get>>;
+    items: (typeof reports)[number]["items"];
   };
   const byAuthor = new Map<string, MergedReport>();
   for (const r of reports) {
@@ -128,6 +133,7 @@ export async function standup(req: Request, res: Response) {
         status: r.status,
         reportCount: 1,
         tasks: tasksByUser.get(r.authorId) ?? [],
+        items: [...r.items],
       });
     } else {
       cur.did = mergeText(cur.did, r.did);
@@ -137,6 +143,7 @@ export async function standup(req: Request, res: Response) {
       cur.status = r.status;
       cur.id = r.id;
       cur.reportCount += 1;
+      cur.items.push(...r.items);
     }
   }
   const submittedReports = [...byAuthor.values()].sort((a, b) =>
