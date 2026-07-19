@@ -193,6 +193,56 @@ export async function deleteAsset(
   return r.result;
 }
 
+export type AccountUsage = {
+  plan: string | null;
+  credits: { used: number; limit: number | null; usedPercent: number | null } | null;
+  storage: { usedBytes: number; limitBytes: number | null };
+  bandwidth: { usedBytes: number; limitBytes: number | null };
+  transformations: { used: number; limit: number | null } | null;
+  objects: { used: number; limit: number | null } | null;
+  lastUpdated: string | null;
+};
+
+/** Loose shape of the Cloudinary Admin `usage` response (fields vary by plan). */
+type RawUsage = {
+  plan?: string;
+  last_updated?: string;
+  credits?: { usage?: number; limit?: number; used_percent?: number };
+  storage?: { usage?: number; limit?: number };
+  bandwidth?: { usage?: number; limit?: number };
+  transformations?: { usage?: number; limit?: number };
+  objects?: { usage?: number; limit?: number };
+};
+
+/**
+ * Account-level usage from the Cloudinary Admin API (credits, storage, bandwidth,
+ * transformations, object count). Normalized to a stable shape for the Settings
+ * "storage usage" panel. Requires configured credentials.
+ */
+export async function getAccountUsage(): Promise<AccountUsage> {
+  ensureConfigured();
+  const u = (await cloudinary.api.usage()) as RawUsage;
+  return {
+    plan: u.plan ?? null,
+    credits: u.credits
+      ? {
+          used: u.credits.usage ?? 0,
+          limit: u.credits.limit ?? null,
+          usedPercent: u.credits.used_percent ?? null,
+        }
+      : null,
+    storage: { usedBytes: u.storage?.usage ?? 0, limitBytes: u.storage?.limit ?? null },
+    bandwidth: { usedBytes: u.bandwidth?.usage ?? 0, limitBytes: u.bandwidth?.limit ?? null },
+    transformations: u.transformations
+      ? { used: u.transformations.usage ?? 0, limit: u.transformations.limit ?? null }
+      : null,
+    objects: u.objects
+      ? { used: u.objects.usage ?? 0, limit: u.objects.limit ?? null }
+      : null,
+    lastUpdated: u.last_updated ?? null,
+  };
+}
+
 /** A ~320x180 auto-format thumbnail URL for an image asset (board/grid preview). */
 export function buildThumbnailUrl(publicId: string, version?: number | null): string {
   ensureConfigured();

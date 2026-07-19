@@ -107,6 +107,17 @@ export async function getUploadConfig(_req: Request, res: Response) {
   res.json(uploadConfig());
 }
 
+/**
+ * GET /api/uploads/credit-usage — account-level Cloudinary usage (credits,
+ * storage, bandwidth) for the Settings storage panel. Manager/admin only
+ * (gated at the route). 503 when Cloudinary isn't configured.
+ */
+export async function getCreditUsage(_req: Request, res: Response) {
+  assertCloudinaryReady();
+  const usage = await cld.getAccountUsage();
+  res.json({ usage });
+}
+
 /** GET /api/tasks/:taskId/attachments/usage — live usage vs. limits. */
 export async function getTaskAttachmentUsage(req: Request, res: Response) {
   // Viewing usage only requires that the task exists (any authenticated user
