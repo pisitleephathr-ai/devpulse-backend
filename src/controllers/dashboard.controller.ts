@@ -7,6 +7,7 @@ import {
   bangkokDateToUtcRange,
   startOfBangkokDayUtc,
 } from "../lib/date";
+import { workdayInfo } from "../lib/workday";
 
 const NO_BLOCKER = new Set(["", "ไม่มี", "—", "วันนี้ไม่มี", "-", "ไม่มีครับ", "ไม่มีค่ะ"]);
 
@@ -198,7 +199,12 @@ export async function insights(_req: Request, res: Response) {
   const requiredReporters = activeUsers.filter((u) => u.requiresDailyReport);
   const submittedIds = new Set(reportsForDay.map((r) => r.authorId));
   const submitted = requiredReporters.filter((u) => submittedIds.has(u.id));
-  const missing = requiredReporters.filter((u) => !submittedIds.has(u.id));
+  // On a non-working day (weekend / company holiday) no daily report is
+  // expected — nobody is counted as missing, and the UI shows a holiday state.
+  const { isWorkingDay, holiday } = await workdayInfo(today);
+  const missing = isWorkingDay
+    ? requiredReporters.filter((u) => !submittedIds.has(u.id))
+    : [];
 
   // Top blockers from recent reports (skip "no blocker" placeholders).
   const topBlockers = recentBlockerReports
@@ -270,6 +276,8 @@ export async function insights(_req: Request, res: Response) {
       totalMembers: requiredReporters.length,
       submitted,
       missing,
+      isWorkingDay,
+      holiday,
     },
     topBlockers,
     workload,

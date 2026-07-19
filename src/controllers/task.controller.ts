@@ -403,7 +403,31 @@ export async function updateTaskStatus(req: Request, res: Response) {
 }
 
 export async function deleteTask(req: Request, res: Response) {
-  await prisma.task.delete({ where: { id: req.params.id } });
+  const id = req.params.id;
+  // Collect Cloudinary assets BEFORE deleting the task (the cascade removes the
+  // attachment rows), then purge them from Cloudinary so nothing is orphaned.
+  const assets = await prisma.taskAttachment.findMany({
+    where: { taskId: id, source: "CLOUDINARY", cloudinaryPublicId: { not: null } },
+    select: { cloudinaryPublicId: true, cloudinaryResourceType: true },
+  });
+
+  await prisma.task.delete({ where: { id } });
+
+  // Best-effort remote cleanup — never blocks the response. A failure is logged
+  // (publicId only, never a secret); the periodic cleanup job is the backstop.
+  if (cld.isConfigured() && assets.length) {
+    for (const a of assets) {
+      if (!a.cloudinaryPublicId) continue;
+      const rt = a.cloudinaryResourceType === "raw" ? "raw" : "image";
+      cld.deleteAsset(a.cloudinaryPublicId, rt).catch((err) =>
+        console.error(
+          `[task.delete] Cloudinary delete failed publicId=${a.cloudinaryPublicId}:`,
+          err instanceof Error ? err.message : err
+        )
+      );
+    }
+  }
+
   res.status(204).send();
 }
 

@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { notifyMany } from "../lib/notify";
 import { getBangkokDateString, bangkokDateToUtcRange } from "../lib/date";
+import { workdayInfo } from "../lib/workday";
 
 const NO_BLOCKER = new Set(["", "ไม่มี", "—", "-", "วันนี้ไม่มี", "ไม่มีครับ", "ไม่มีค่ะ"]);
 function cleanBlocker(s: string) {
@@ -53,9 +54,13 @@ export async function standup(req: Request, res: Response) {
 
   const submittedIds = new Set(reports.map((r) => r.authorId));
   const required = activeUsers.filter((u) => u.requiresDailyReport);
-  const missingUsers = required
-    .filter((u) => !submittedIds.has(u.id))
-    .map(({ requiresDailyReport, ...u }) => u);
+  // On a non-working day (weekend / company holiday) no report is expected, so
+  // nobody is "missing" — the UI shows a holiday state instead.
+  const { isWorkingDay, holiday } = await workdayInfo(dateStr);
+  const missingUsers = (isWorkingDay
+    ? required.filter((u) => !submittedIds.has(u.id))
+    : []
+  ).map(({ requiresDailyReport, ...u }) => u);
   const exemptUsers = activeUsers
     .filter((u) => !u.requiresDailyReport)
     .map(({ requiresDailyReport, ...u }) => u);
@@ -147,6 +152,8 @@ export async function standup(req: Request, res: Response) {
     missingUsers,
     exemptUsers,
     blockers,
+    isWorkingDay,
+    holiday,
   });
 }
 
@@ -158,6 +165,13 @@ export async function standup(req: Request, res: Response) {
 export async function remind(req: Request, res: Response) {
   const dateStr = (req.body?.date as string) || bangkokToday();
   const range = dayRange(dateStr);
+
+  // No reminders on a non-working day (weekend / company holiday).
+  const { isWorkingDay } = await workdayInfo(dateStr);
+  if (!isWorkingDay) {
+    res.json({ notified: 0 });
+    return;
+  }
 
   const [required, reports] = await Promise.all([
     prisma.user.findMany({
