@@ -4,7 +4,11 @@ import { prisma } from "../lib/prisma";
 import { env } from "../lib/env";
 import { replyTextToLine, replyToLine } from "../lib/line";
 import { linkByCode, unlinkByLineUserId } from "../lib/line-link";
-import { handleBotCommand, isBotCommand } from "../lib/line-commands";
+import {
+  handleBotCommand,
+  isBotCommand,
+  matchTextCommand,
+} from "../lib/line-commands";
 
 // Minimal fields required to create the singleton if it doesn't exist yet.
 const DEFAULT_SETTING = { teamName: "ทีมแพลตฟอร์ม", reportReminderTime: "16:30 น." };
@@ -96,18 +100,22 @@ async function handleUserEvent(ev: {
       );
       return;
     }
-    // Not a valid code. If this LINE is already linked, the user is just chatting
-    // — reply with a friendly menu hint instead of a scary "code not found".
+    // Not a valid code. If this LINE is already linked, treat the text as a
+    // typed command (falling back to the help menu). Otherwise guide them to link.
     const already = await prisma.user.findFirst({
       where: { lineUserId },
-      select: { name: true },
+      select: { id: true },
     });
-    await replyTextToLine(
-      ev.replyToken,
-      already
-        ? `สวัสดีคุณ${already.name} 👋 ใช้เมนูด้านล่างได้เลยครับ:\n• งานของฉัน\n• ใครลาวันนี้\n• สถานะรายงานวันนี้\nหรือกดปุ่มเปิดหน้าเว็บเพื่อดูรายละเอียด`
-        : `ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว\n${LINK_HELP}`
-    );
+    if (already) {
+      const cmd = matchTextCommand(text) ?? "help";
+      const messages = await handleBotCommand(cmd, lineUserId);
+      if (messages.length) await replyToLine(ev.replyToken, messages);
+    } else {
+      await replyTextToLine(
+        ev.replyToken,
+        `ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว\n${LINK_HELP}`
+      );
+    }
   }
 }
 

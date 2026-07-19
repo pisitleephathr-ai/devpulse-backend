@@ -10,12 +10,37 @@ import { leaveTypeLabel, leaveDaysLabel } from "./line-messages";
 import { getBangkokDateString, bangkokDateToUtcRange } from "./date";
 import { workdayInfo } from "./workday";
 
-/** Rich-menu postback commands. */
-export const BOT_COMMANDS = ["my_tasks", "leave_today", "report_today"] as const;
+/** Bot commands — triggered by a rich-menu postback OR a typed keyword. */
+export const BOT_COMMANDS = [
+  "my_tasks",
+  "my_overdue",
+  "due_today",
+  "leave_today",
+  "report_today",
+  "help",
+] as const;
 export type BotCommand = (typeof BOT_COMMANDS)[number];
 
 export function isBotCommand(s: string): s is BotCommand {
   return (BOT_COMMANDS as readonly string[]).includes(s);
+}
+
+/**
+ * Match a free-typed message to a bot command (Thai + English keywords), so a
+ * linked user can just type "งานเลยกำหนด" instead of tapping a button. More
+ * specific patterns are checked first. Returns null when nothing matches.
+ */
+export function matchTextCommand(raw: string): BotCommand | null {
+  const t = raw.trim().toLowerCase();
+  if (!t) return null;
+  if (/(เมนู|คำสั่ง|ช่วยเหลือ|help|menu|\?)/.test(t)) return "help";
+  if (/(เลยกำหนด|เกินกำหนด|ค้าง|overdue|late)/.test(t)) return "my_overdue";
+  if (/(ครบกำหนด|กำหนดส่ง|due|deadline)/.test(t)) return "due_today";
+  if (/(ใครลา|ลาวันนี้|วันลา|on leave|leave)/.test(t)) return "leave_today";
+  if (/(รายงาน|report)/.test(t)) return "report_today";
+  if (/(งาน|task|my task)/.test(t)) return "my_tasks";
+  if (/(สวัสดี|hello|hi|hey|เริ่ม|start)/.test(t)) return "help";
+  return null;
 }
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
@@ -147,12 +172,92 @@ async function reportToday(): Promise<LineMessage[]> {
   return [text(withLink(`${head}\n\n${body}`, "/reports"))];
 }
 
+const NOT_LINKED =
+  "ยังไม่ได้เชื่อมต่อบัญชี — เปิดเว็บ DevPulse → โปรไฟล์ → เชื่อมต่อ LINE เพื่อใช้คำสั่งนี้ครับ";
+
+/** "งานเลยกำหนดของฉัน" — the caller's not-done tasks past their due date. */
+async function myOverdue(lineUserId: string): Promise<LineMessage[]> {
+  const user = await prisma.user.findFirst({
+    where: { lineUserId },
+    select: { id: true, name: true },
+  });
+  if (!user) return [text(NOT_LINKED)];
+  const { gte } = bangkokDateToUtcRange(getBangkokDateString()); // start of today
+  const tasks = await prisma.task.findMany({
+    where: {
+      status: { not: "DONE" },
+      dueDate: { not: null, lt: gte },
+      OR: [{ assigneeId: user.id }, { assignees: { some: { userId: user.id } } }],
+    },
+    select: { title: true, status: true, dueDate: true, project: { select: { code: true } } },
+    orderBy: [{ dueDate: "asc" }],
+    take: 15,
+  });
+  if (!tasks.length) return [text(`🎉 คุณ${user.name} ไม่มีงานเลยกำหนดครับ`)];
+  const lines = tasks.map(
+    (t) => `🔴 [${t.project.code}] ${t.title}\n   ${STATUS_LABEL[t.status]} · เลยกำหนด ${thaiDate(t.dueDate!)}`
+  );
+  return [
+    text(withLink(`⚠️ งานเลยกำหนดของคุณ${user.name} (${tasks.length})\n\n${lines.join("\n")}`, "/tasks")),
+  ];
+}
+
+/** "งานครบกำหนดวันนี้" — the caller's not-done tasks due today. */
+async function dueToday(lineUserId: string): Promise<LineMessage[]> {
+  const user = await prisma.user.findFirst({
+    where: { lineUserId },
+    select: { id: true, name: true },
+  });
+  if (!user) return [text(NOT_LINKED)];
+  const { gte, lt } = bangkokDateToUtcRange(getBangkokDateString());
+  const tasks = await prisma.task.findMany({
+    where: {
+      status: { not: "DONE" },
+      dueDate: { gte, lt },
+      OR: [{ assigneeId: user.id }, { assignees: { some: { userId: user.id } } }],
+    },
+    select: { title: true, status: true, project: { select: { code: true } } },
+    orderBy: [{ priority: "desc" }],
+    take: 15,
+  });
+  if (!tasks.length) return [text(`วันนี้คุณ${user.name} ไม่มีงานครบกำหนดครับ 👍`)];
+  const lines = tasks.map((t) => `• [${t.project.code}] ${t.title}\n   ${STATUS_LABEL[t.status]}`);
+  return [
+    text(withLink(`📅 งานครบกำหนดวันนี้ของคุณ${user.name} (${tasks.length})\n\n${lines.join("\n")}`, "/tasks")),
+  ];
+}
+
+/** Menu / help — the list of typed keywords the bot understands. */
+function help(): LineMessage[] {
+  return [
+    text(
+      "🤖 เมนูบอท DevPulse\nพิมพ์คำสั่ง หรือกดปุ่มเมนูด้านล่างได้เลยครับ:\n" +
+        "• งานของฉัน\n" +
+        "• งานเลยกำหนด\n" +
+        "• งานครบกำหนดวันนี้\n" +
+        "• ใครลาวันนี้\n" +
+        "• สถานะรายงานวันนี้"
+    ),
+  ];
+}
+
 /** Run a bot command and return the reply message(s). */
 export async function handleBotCommand(
   cmd: BotCommand,
   lineUserId: string
 ): Promise<LineMessage[]> {
-  if (cmd === "my_tasks") return myTasks(lineUserId);
-  if (cmd === "leave_today") return leaveToday();
-  return reportToday();
+  switch (cmd) {
+    case "my_tasks":
+      return myTasks(lineUserId);
+    case "my_overdue":
+      return myOverdue(lineUserId);
+    case "due_today":
+      return dueToday(lineUserId);
+    case "leave_today":
+      return leaveToday();
+    case "report_today":
+      return reportToday();
+    case "help":
+      return help();
+  }
 }
