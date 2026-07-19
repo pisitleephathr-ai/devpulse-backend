@@ -61,9 +61,12 @@ export async function updateRole(req: Request, res: Response) {
   if (role.isSystem && data.isActive === false) {
     throw new AppError(400, "ไม่สามารถปิดใช้งานบทบาทระบบได้");
   }
-  // System roles' capabilities are fixed — don't allow stripping ADMIN_FULL etc.
-  if (role.isSystem && data.permissions) {
-    throw new AppError(400, "ไม่สามารถแก้สิทธิ์ของบทบาทระบบได้");
+  // The ADMIN role must always keep full access (prevents self-lockout), so its
+  // capabilities can't be edited. Every other role — including the built-in
+  // worker roles (DEVELOPER/QA/DESIGNER) and MANAGER — may be granted or have
+  // removed fine-grained capabilities from the roles page.
+  if (role.code === "ADMIN" && data.permissions) {
+    throw new AppError(400, "ไม่สามารถแก้สิทธิ์ของบทบาทผู้ดูแลระบบได้");
   }
 
   const updated = await prisma.role.update({

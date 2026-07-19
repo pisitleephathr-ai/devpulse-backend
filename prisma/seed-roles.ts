@@ -20,13 +20,23 @@ async function main() {
   // 1) Upsert the default system roles.
   const roleByCode: Record<string, string> = {};
   for (const r of DEFAULT_ROLES) {
+    // Preserve any capabilities an admin granted via the UI: union the existing
+    // grants with the built-in defaults so a reseed restores the tier caps
+    // without wiping custom grants (e.g. TASK_CREATE added to DEVELOPER).
+    const existing = await prisma.role.findUnique({
+      where: { code: r.code },
+      select: { permissions: true },
+    });
+    const permissions = [
+      ...new Set([...(existing?.permissions ?? []), ...r.permissions]),
+    ];
     const role = await prisma.role.upsert({
       where: { code: r.code },
       update: {
         name: r.name,
         description: r.description,
         isSystem: true,
-        permissions: [...r.permissions],
+        permissions,
       },
       create: {
         code: r.code,
