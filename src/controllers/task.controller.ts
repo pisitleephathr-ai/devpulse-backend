@@ -268,11 +268,16 @@ export async function updateTask(req: Request, res: Response) {
         });
     }
     if (attachments) {
-      await tx.taskAttachment.deleteMany({ where: { taskId: id } });
+      // The edit form only manages URL/link attachments. Cloudinary uploads are
+      // managed by the dedicated upload/delete endpoints and MUST survive an
+      // edit — so only the URL-source rows are replaced here.
+      await tx.taskAttachment.deleteMany({ where: { taskId: id, source: "URL" } });
       if (attachments.length)
         await tx.taskAttachment.createMany({
           data: attachments.map((a) => ({
             taskId: id,
+            source: "URL",
+            kind: "LINK",
             fileName: a.fileName.trim(),
             fileUrl: a.fileUrl.trim(),
             fileType: a.fileType,
