@@ -199,7 +199,7 @@ async function sendHighlightReel(): Promise<SendResult> {
 
   const [doneTasks, reportsSubmitted, kudosCount] = await Promise.all([
     prisma.task.findMany({
-      where: { status: "DONE", completedAt: { not: null, gte: since } },
+      where: { status: "DELIVERY_DONE", completedAt: { not: null, gte: since } },
       select: {
         project: { select: { name: true } },
         assignees: { select: { user: { select: { id: true, name: true } } } },

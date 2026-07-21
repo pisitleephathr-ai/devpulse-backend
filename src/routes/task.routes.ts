@@ -13,6 +13,7 @@ import {
   attachmentSchema,
   createTaskSchema,
   linkSchema,
+  reworkSchema,
   taskQuerySchema,
   updateStatusSchema,
   updateTaskSchema,
@@ -58,6 +59,12 @@ router.patch(
   "/:id/status",
   validate({ params: idParam, body: updateStatusSchema }),
   asyncHandler(ctrl.updateTaskStatus)
+);
+// Delivery Fail → spawn a fresh TODO rework task referencing this one.
+router.post(
+  "/:id/rework",
+  validate({ params: idParam, body: reworkSchema }),
+  asyncHandler(ctrl.reworkTask)
 );
 
 // Reference links

@@ -16,9 +16,10 @@ const PRIORITY: Record<TaskPriority, { label: string; color: string }> = {
 const STATUS: Record<TaskStatus, { label: string; color: string }> = {
   TODO: { label: "รอดำเนินการ", color: "#6b7280" },
   IN_PROGRESS: { label: "กำลังทำ", color: "#2563eb" },
-  REVIEW: { label: "รอตรวจ", color: "#7c3aed" },
-  READY_TO_TEST: { label: "พร้อมทดสอบ", color: "#0891b2" },
-  DONE: { label: "เสร็จแล้ว", color: "#16a34a" },
+  DEV_REVIEW: { label: "รีวิวโค้ด", color: "#7c3aed" },
+  DEV_DONE: { label: "Dev เสร็จ", color: "#0891b2" },
+  DELIVERY_DONE: { label: "ส่งมอบสำเร็จ", color: "#16a34a" },
+  DELIVERY_FAIL: { label: "ส่งมอบไม่ผ่าน", color: "#dc2626" },
 };
 
 /** Public status label/color lookup (for callers building task rows). */

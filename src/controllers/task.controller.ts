@@ -13,12 +13,14 @@ import {
 import { taskCreatedFlex, taskStatusFlex } from "../lib/line-messages";
 import { isTeamManager, hasPermission } from "../lib/authz";
 import { PERMISSIONS } from "../lib/roles";
+import { isAllowedTransition, isDeliveryTarget } from "../lib/task-workflow";
 import * as cld from "../lib/cloudinary";
 import { AppError } from "../middleware/error";
 import type {
   AttachmentInput,
   CreateTaskInput,
   LinkInput,
+  ReworkInput,
   TaskQuery,
   UpdateTaskInput,
 } from "../schemas/task.schema";
@@ -26,14 +28,15 @@ import type {
 const STATUS_LABEL: Record<TaskStatus, string> = {
   TODO: "รอดำเนินการ",
   IN_PROGRESS: "กำลังทำ",
-  REVIEW: "รอตรวจ",
-  READY_TO_TEST: "พร้อมทดสอบ",
-  DONE: "เสร็จแล้ว",
+  DEV_REVIEW: "รีวิวโค้ด",
+  DEV_DONE: "Dev เสร็จ",
+  DELIVERY_DONE: "ส่งมอบสำเร็จ",
+  DELIVERY_FAIL: "ส่งมอบไม่ผ่าน",
 };
-
 
 const include = {
   assignee: { select: userMiniSelect },
+  handoffUser: { select: userMiniSelect },
   assignees: {
     include: { user: { select: userMiniSelect } },
     orderBy: { assignedAt: "asc" },
@@ -61,7 +64,41 @@ const detailInclude = {
   // Hide soft-deleted attachments whose remote delete is still pending retry.
   attachments: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
   checklist: { orderBy: { order: "asc" } },
+  // The card this was reworked from, and any rework spawned from it (for links).
+  originTask: { select: { id: true, title: true, status: true } },
+  reworkTasks: { select: { id: true, title: true, status: true } },
 } satisfies Prisma.TaskInclude;
+
+/**
+ * Enforce the board workflow on a status change. Managers/admins bypass all of
+ * it. Everyone else: one forward step only, and the delivery-side moves are
+ * reserved for the card's handoff tester while the dev-side moves are reserved
+ * for its assignees.
+ */
+function assertTransition(
+  req: Request,
+  from: TaskStatus,
+  to: TaskStatus,
+  task: { handoffUserId: string | null; assigneeId: string | null; assignees: { userId: string }[] }
+) {
+  if (from === to) return;
+  if (isTeamManager(req)) return; // manager override — any move
+  if (!isAllowedTransition(from, to)) {
+    throw new AppError(400, "ย้ายสถานะข้ามขั้นหรือย้อนกลับไม่ได้ ต้องไปทีละขั้นตามลำดับงาน");
+  }
+  const uid = req.user!.id;
+  if (isDeliveryTarget(to)) {
+    if (task.handoffUserId !== uid) {
+      throw new AppError(403, "เฉพาะผู้รับต่อ (ผู้ทดสอบ) เท่านั้นที่ย้ายไปขั้นส่งมอบได้");
+    }
+  } else {
+    const isAssignee =
+      task.assigneeId === uid || task.assignees.some((a) => a.userId === uid);
+    if (!isAssignee) {
+      throw new AppError(403, "เฉพาะผู้รับผิดชอบงานเท่านั้นที่ย้ายสถานะนี้ได้");
+    }
+  }
+}
 
 /** Flatten the join rows into a plain `assignees` user array for the client. */
 function flatten<T extends { assignees: { user: unknown }[] }>(task: T) {
@@ -139,11 +176,13 @@ export async function createTask(req: Request, res: Response) {
       projectId: data.projectId,
       // Keep the legacy primary assignee in sync for backward compatibility.
       assigneeId: assigneeIds[0] ?? null,
+      handoffUserId: data.handoffUserId ?? null,
       priority: data.priority ?? "MEDIUM",
       status: data.status ?? "TODO",
-      // A task created straight into DONE is completed now.
-      completedAt: data.status === "DONE" ? new Date() : null,
+      // A task created straight into DELIVERY_DONE is completed now.
+      completedAt: data.status === "DELIVERY_DONE" ? new Date() : null,
       dueDate: data.dueDate ?? null,
+      estimatedFinishAt: data.estimatedFinishAt ?? null,
       assignees: assigneeIds.length
         ? { create: assigneeIds.map((userId) => ({ userId, assignedById: req.user!.id })) }
         : undefined,
@@ -253,27 +292,18 @@ export async function updateTask(req: Request, res: Response) {
 
   const before = await prisma.task.findUnique({
     where: { id },
-    select: { status: true, assignees: { select: { userId: true } } },
+    select: { assignees: { select: { userId: true } } },
   });
   const beforeIds = new Set(before?.assignees.map((a) => a.userId) ?? []);
   const nextIds = assigneeIds ? [...new Set(assigneeIds.filter(Boolean))] : null;
 
-  // Maintain completedAt when the edit changes status (mirrors updateTaskStatus).
-  const completedAtUpdate =
-    scalar.status === undefined
-      ? {}
-      : scalar.status === "DONE"
-        ? before?.status === "DONE"
-          ? {}
-          : { completedAt: new Date() }
-        : { completedAt: null };
-
+  // Status is NOT editable here (see updateTaskStatus) — this endpoint only
+  // touches scalar fields, assignees, links, and URL attachments.
   const task = await prisma.$transaction(async (tx) => {
     await tx.task.update({
       where: { id },
       data: {
         ...scalar,
-        ...completedAtUpdate,
         // Keep the legacy primary in sync when assignees change.
         ...(nextIds ? { assigneeId: nextIds[0] ?? null } : {}),
       },
@@ -359,61 +389,62 @@ export async function updateTask(req: Request, res: Response) {
     }
   }
 
-  // If this edit changed the status, announce on LINE — group card respects the
-  // team's status toggle; personal DMs respect each assignee's own pref.
-  if (task && before && task.status !== before.status) {
-    const mover = await prisma.user.findUnique({
-      where: { id: req.user!.id },
-      select: { name: true },
-    });
-    const base = appBaseUrl();
-    const statusCard = taskStatusFlex(
-      {
-        title: task.title,
-        projectName: task.project.name,
-        projectCode: task.project.code,
-        fromStatus: before.status,
-        toStatus: task.status,
-        actorName: mover?.name ?? "ระบบ",
-      },
-      base ? `${base}/tasks?task=${task.id}` : undefined
-    );
-    if ((await getLinePrefs()).statuses.includes(task.status)) {
-      await pushFlexToLineGroup(statusCard.altText, statusCard.contents);
-    }
-    await pushFlexToUsersWithPref(
-      task.assignees.map((a) => a.user.id).filter((uid) => uid !== req.user!.id),
-      "taskStatus",
-      statusCard.altText,
-      statusCard.contents
-    );
-  }
-
   res.json({ task: flatten(task!) });
 }
 
 export async function updateTaskStatus(req: Request, res: Response) {
-  await assertCanEdit(req, req.params.id);
+  const id = req.params.id;
+  await assertCanEdit(req, id);
   const status = (req.body as { status: TaskStatus }).status;
-  // Capture the previous status so the LINE card can show "from → to".
+
   const before = await prisma.task.findUnique({
-    where: { id: req.params.id },
-    select: { status: true },
-  });
-  const task = await prisma.task.update({
-    where: { id: req.params.id },
-    data: {
-      status,
-      // Stamp/clear the completion time on the DONE transition (for on-time metrics).
-      completedAt:
-        status === "DONE"
-          ? before?.status === "DONE"
-            ? undefined
-            : new Date()
-          : null,
+    where: { id },
+    select: {
+      status: true,
+      startedAt: true,
+      devDoneAt: true,
+      handoffUserId: true,
+      assigneeId: true,
+      assignees: { select: { userId: true } },
     },
-    include,
   });
+  if (!before) throw new AppError(404, "ไม่พบงาน");
+  // Enforce the board workflow (one forward step; role-gated by dev/tester).
+  assertTransition(req, before.status, status, before);
+
+  const task = (await prisma.$transaction(async (tx) => {
+    await tx.task.update({
+      where: { id },
+      data: {
+        status,
+        // Actual start — stamped the first time the card enters IN_PROGRESS.
+        ...(status === "IN_PROGRESS" && !before.startedAt
+          ? { startedAt: new Date() }
+          : {}),
+        // Dev finished — stamped when the card enters DEV_DONE.
+        ...(status === "DEV_DONE"
+          ? { devDoneAt: before.devDoneAt ?? new Date() }
+          : {}),
+        // Completion = reaching DELIVERY_DONE (terminal success); cleared if a
+        // manager moves it back out.
+        completedAt:
+          status === "DELIVERY_DONE"
+            ? before.status === "DELIVERY_DONE"
+              ? undefined
+              : new Date()
+            : null,
+      },
+    });
+    // Entering DEV_DONE hands the card to the tester — auto-add them as an
+    // assignee so they can pick it up and drive the delivery-side moves.
+    if (status === "DEV_DONE" && before.handoffUserId) {
+      await tx.taskAssignee.createMany({
+        data: [{ taskId: id, userId: before.handoffUserId, assignedById: req.user!.id }],
+        skipDuplicates: true,
+      });
+    }
+    return tx.task.findUnique({ where: { id }, include });
+  }))!;
 
   await logActivity({
     userId: req.user!.id,
@@ -437,7 +468,7 @@ export async function updateTaskStatus(req: Request, res: Response) {
 
   // Announce the status change on LINE — group card respects the team's status
   // toggle; personal DMs respect each assignee's own pref.
-  if (before?.status !== status) {
+  if (before.status !== status) {
     const mover = await prisma.user.findUnique({
       where: { id: req.user!.id },
       select: { name: true },
@@ -448,7 +479,7 @@ export async function updateTaskStatus(req: Request, res: Response) {
         title: task.title,
         projectName: task.project.name,
         projectCode: task.project.code,
-        fromStatus: before?.status ?? null,
+        fromStatus: before.status,
         toStatus: status,
         actorName: mover?.name ?? "ระบบ",
       },
@@ -466,6 +497,94 @@ export async function updateTaskStatus(req: Request, res: Response) {
   }
 
   res.json({ task: flatten(task) });
+}
+
+/**
+ * Create a rework (retry) task from a DELIVERY_FAIL card. Copies the original's
+ * title/project/description/assignees/handoff into a fresh TODO task that
+ * references the original (`originTaskId`), and drops the failure reason as a
+ * comment on the original. The failed card stays put as a record.
+ */
+export async function reworkTask(req: Request, res: Response) {
+  const id = req.params.id;
+  await assertCanEdit(req, id);
+  const { comment } = req.body as ReworkInput;
+
+  const origin = await prisma.task.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      projectId: true,
+      priority: true,
+      status: true,
+      handoffUserId: true,
+      assignees: { select: { userId: true } },
+    },
+  });
+  if (!origin) throw new AppError(404, "ไม่พบงาน");
+  if (origin.status !== "DELIVERY_FAIL") {
+    throw new AppError(409, "สร้างงานแก้ไขได้เฉพาะงานที่อยู่ในสถานะส่งมอบไม่ผ่าน");
+  }
+
+  const assigneeIds = [...new Set(origin.assignees.map((a) => a.userId))];
+
+  const created = await prisma.$transaction(async (tx) => {
+    const task = await tx.task.create({
+      data: {
+        title: origin.title,
+        description: origin.description,
+        projectId: origin.projectId,
+        priority: origin.priority,
+        status: "TODO",
+        assigneeId: assigneeIds[0] ?? null,
+        handoffUserId: origin.handoffUserId,
+        originTaskId: origin.id,
+        assignees: assigneeIds.length
+          ? { create: assigneeIds.map((userId) => ({ userId, assignedById: req.user!.id })) }
+          : undefined,
+      },
+      include: detailInclude,
+    });
+    // Record the failure reason on the original card so the history is intact.
+    await tx.taskComment.create({
+      data: {
+        taskId: origin.id,
+        authorId: req.user!.id,
+        message: `❌ ส่งมอบไม่ผ่าน: ${comment.trim()}\n↳ สร้างงานแก้ไขใหม่ "${task.title}"`,
+      },
+    });
+    await logActivity(
+      {
+        userId: req.user!.id,
+        action: "task.rework",
+        message: `สร้างงานแก้ไขจาก "${origin.title}" ที่ส่งมอบไม่ผ่าน`,
+        entityType: "task",
+        entityId: task.id,
+      },
+      tx
+    );
+    return task;
+  });
+
+  // Notify the rework assignees (except the actor) — best-effort.
+  try {
+    await notifyMany(
+      assigneeIds.filter((uid) => uid !== req.user!.id),
+      {
+        type: "task.assigned",
+        title: "มีงานแก้ไขใหม่",
+        message: `งาน "${created.title}" ถูกส่งกลับมาแก้ไขหลังส่งมอบไม่ผ่าน`,
+        entityType: "task",
+        entityId: created.id,
+      }
+    );
+  } catch (err) {
+    console.warn("[task.rework] post-commit notify failed:", err);
+  }
+
+  res.status(201).json({ task: flatten(created) });
 }
 
 export async function deleteTask(req: Request, res: Response) {

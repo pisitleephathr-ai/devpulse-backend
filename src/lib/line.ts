@@ -109,11 +109,11 @@ export async function getLinePrefs(): Promise<LinePrefs> {
     });
     return {
       notifyNewTask: s?.lineNotifyNewTask ?? true,
-      statuses: s?.lineNotifyStatuses ?? ["TODO", "DONE"],
+      statuses: s?.lineNotifyStatuses ?? ["TODO", "DELIVERY_DONE"],
       notifyLeave: s?.lineNotifyLeave ?? true,
     };
   } catch {
-    return { notifyNewTask: true, statuses: ["TODO", "DONE"], notifyLeave: true };
+    return { notifyNewTask: true, statuses: ["TODO", "DELIVERY_DONE"], notifyLeave: true };
   }
 }
 

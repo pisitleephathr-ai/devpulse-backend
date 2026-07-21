@@ -145,7 +145,7 @@ async function myTasks(lineUserId: string): Promise<LineMessage[]> {
   if (!user) return notLinked();
   const base = appBaseUrl();
   const tasks = await prisma.task.findMany({
-    where: { status: { not: "DONE" }, ...assignedTo(user.id) },
+    where: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] }, ...assignedTo(user.id) },
     select: TASK_ROW_SELECT,
     orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }],
     take: 15,
@@ -169,7 +169,7 @@ async function myOverdue(lineUserId: string): Promise<LineMessage[]> {
   const base = appBaseUrl();
   const { gte } = bangkokDateToUtcRange(getBangkokDateString());
   const tasks = await prisma.task.findMany({
-    where: { status: { not: "DONE" }, dueDate: { not: null, lt: gte }, ...assignedTo(user.id) },
+    where: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] }, dueDate: { not: null, lt: gte }, ...assignedTo(user.id) },
     select: TASK_ROW_SELECT,
     orderBy: [{ dueDate: "asc" }],
     take: 20,
@@ -192,7 +192,7 @@ async function dueToday(lineUserId: string): Promise<LineMessage[]> {
   const base = appBaseUrl();
   const { gte, lt } = bangkokDateToUtcRange(getBangkokDateString());
   const tasks = await prisma.task.findMany({
-    where: { status: { not: "DONE" }, dueDate: { gte, lt }, ...assignedTo(user.id) },
+    where: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] }, dueDate: { gte, lt }, ...assignedTo(user.id) },
     select: TASK_ROW_SELECT,
     orderBy: [{ priority: "desc" }],
     take: 20,
@@ -288,7 +288,7 @@ export async function closeTaskByName(
     return card("✅ ปิดงาน", "#0d9488", 'พิมพ์ชื่องานต่อท้ายนะครับ เช่น\n"เสร็จ ทำหน้า login"');
   const candidates = await prisma.task.findMany({
     where: {
-      status: { not: "DONE" },
+      status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] },
       ...assignedTo(user.id),
       title: { contains: q, mode: "insensitive" },
     },
@@ -304,7 +304,7 @@ export async function closeTaskByName(
   const task = candidates[0];
   await prisma.task.update({
     where: { id: task.id },
-    data: { status: "DONE", completedAt: new Date() },
+    data: { status: "DELIVERY_DONE", completedAt: new Date() },
   });
   await logActivity({
     userId: user.id,
@@ -341,7 +341,7 @@ export async function memberTasks(
   if (!target) return card("ไม่พบสมาชิก", "#d97706", `ไม่พบสมาชิกชื่อ "${name}" ครับ`);
   const base = appBaseUrl();
   const tasks = await prisma.task.findMany({
-    where: { status: { not: "DONE" }, ...assignedTo(target.id) },
+    where: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] }, ...assignedTo(target.id) },
     select: TASK_ROW_SELECT,
     orderBy: [{ dueDate: "asc" }],
     take: 15,
@@ -377,7 +377,7 @@ export async function buildDailyDigest(
   const tomorrowEnd = new Date(todayEnd.getTime() + 24 * 60 * 60 * 1000);
 
   const tasks = await prisma.task.findMany({
-    where: { status: { not: "DONE" }, dueDate: { not: null, lt: tomorrowEnd }, ...assignedTo(userId) },
+    where: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] }, dueDate: { not: null, lt: tomorrowEnd }, ...assignedTo(userId) },
     select: TASK_ROW_SELECT,
     orderBy: [{ dueDate: "asc" }],
     take: 20,

@@ -17,7 +17,14 @@ export const updateSettingsSchema = z
     linePersonalEnabled: z.boolean(),
     lineNotifyNewTask: z.boolean(),
     lineNotifyStatuses: z.array(
-      z.enum(["TODO", "IN_PROGRESS", "REVIEW", "READY_TO_TEST", "DONE"])
+      z.enum([
+        "TODO",
+        "IN_PROGRESS",
+        "DEV_REVIEW",
+        "DEV_DONE",
+        "DELIVERY_DONE",
+        "DELIVERY_FAIL",
+      ])
     ),
     lineNotifyLeave: z.boolean(),
     lineDailyLeaveSummary: z.boolean(),
