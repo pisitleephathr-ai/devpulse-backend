@@ -547,13 +547,21 @@ export async function reworkTask(req: Request, res: Response) {
       },
       include: detailInclude,
     });
-    // Record the failure reason on the original card so the history is intact.
-    await tx.taskComment.create({
-      data: {
-        taskId: origin.id,
-        authorId: req.user!.id,
-        message: `❌ ส่งมอบไม่ผ่าน: ${comment.trim()}\n↳ สร้างงานแก้ไขใหม่ "${task.title}"`,
-      },
+    // Drop the failure reason on BOTH cards: the original keeps the record, and
+    // the new rework card carries it so whoever picks it up sees why it failed.
+    await tx.taskComment.createMany({
+      data: [
+        {
+          taskId: origin.id,
+          authorId: req.user!.id,
+          message: `❌ ส่งมอบไม่ผ่าน: ${comment.trim()}\n↳ สร้างงานแก้ไขใหม่ "${task.title}"`,
+        },
+        {
+          taskId: task.id,
+          authorId: req.user!.id,
+          message: `🔁 งานนี้แก้ไขจาก "${origin.title}" ที่ส่งมอบไม่ผ่าน\nเหตุผล: ${comment.trim()}`,
+        },
+      ],
     });
     await logActivity(
       {
