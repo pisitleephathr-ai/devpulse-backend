@@ -35,6 +35,7 @@ enum TaskStatus {
   IN_PROGRESS
   DEV_REVIEW
   DEV_DONE
+  TESTING
   DELIVERY_DONE
   DELIVERY_FAIL
 }
@@ -263,6 +264,8 @@ model Task {
   startedAt   DateTime?
   /// stamped when the card enters DEV_DONE (dev finished, handed to tester).
   devDoneAt   DateTime?
+  /// stamped when the tester starts (card enters TESTING) — actual test start.
+  testStartedAt DateTime?
   /// when the task reached DELIVERY_DONE (terminal success). Drives on-time-vs-
   /// late completion metrics against dueDate.
   completedAt DateTime?

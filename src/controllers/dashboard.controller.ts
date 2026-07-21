@@ -146,6 +146,7 @@ export async function insights(_req: Request, res: Response) {
     reportsForDay,
     recentBlockerReports,
     workloadGroups,
+    handoffLoad,
     recentlyCompleted,
   ] = await Promise.all([
     prisma.task.groupBy({ by: ["status"], _count: { _all: true } }),
@@ -182,8 +183,17 @@ export async function insights(_req: Request, res: Response) {
       },
     }),
     // Workload counts each assigned user once per task (multi-assignee aware).
+    // DEV_DONE / TESTING are intentionally NOT counted here — once a card leaves
+    // the dev's hands it belongs to the handoff tester (see handoffLoad below),
+    // so the dev is no longer shown as having pending work on it.
     prisma.taskAssignee.findMany({
       select: { userId: true, task: { select: { status: true } } },
+    }),
+    // Cards in the tester's hands (dev done / actively testing) are attributed to
+    // the handoff user (the tester), who is intentionally NOT an assignee.
+    prisma.task.findMany({
+      where: { status: { in: ["DEV_DONE", "TESTING"] }, handoffUserId: { not: null } },
+      select: { handoffUserId: true, status: true },
     }),
     prisma.task.findMany({
       where: { status: "DELIVERY_DONE" },
@@ -202,9 +212,11 @@ export async function insights(_req: Request, res: Response) {
   const inProgress = countBy("IN_PROGRESS");
   const devReview = countBy("DEV_REVIEW");
   const devDone = countBy("DEV_DONE");
+  const testing = countBy("TESTING");
   const deliveryDone = countBy("DELIVERY_DONE");
   const deliveryFail = countBy("DELIVERY_FAIL");
-  const total = todo + inProgress + devReview + devDone + deliveryDone + deliveryFail;
+  const total =
+    todo + inProgress + devReview + devDone + testing + deliveryDone + deliveryFail;
 
   // Report submission status for the reference day. Only users required to
   // submit a daily report are counted — exempt users never appear as missing
@@ -240,33 +252,47 @@ export async function insights(_req: Request, res: Response) {
     .slice(0, 6);
 
   // Per-person workload (open = not yet delivered).
-  const byUser = new Map<
-    string,
-    { todo: number; inProgress: number; devReview: number; devDone: number; deliveryDone: number; deliveryFail: number }
-  >();
+  const emptyLoad = () => ({
+    todo: 0,
+    inProgress: 0,
+    devReview: 0,
+    devDone: 0,
+    testing: 0,
+    deliveryDone: 0,
+    deliveryFail: 0,
+  });
+  const byUser = new Map<string, ReturnType<typeof emptyLoad>>();
   for (const g of workloadGroups) {
-    const acc =
-      byUser.get(g.userId) ??
-      { todo: 0, inProgress: 0, devReview: 0, devDone: 0, deliveryDone: 0, deliveryFail: 0 };
+    const acc = byUser.get(g.userId) ?? emptyLoad();
     if (g.task.status === "TODO") acc.todo += 1;
     else if (g.task.status === "IN_PROGRESS") acc.inProgress += 1;
     else if (g.task.status === "DEV_REVIEW") acc.devReview += 1;
-    else if (g.task.status === "DEV_DONE") acc.devDone += 1;
+    // DEV_DONE / TESTING are attributed to the handoff tester, not the dev.
     else if (g.task.status === "DELIVERY_DONE") acc.deliveryDone += 1;
     else if (g.task.status === "DELIVERY_FAIL") acc.deliveryFail += 1;
     byUser.set(g.userId, acc);
   }
+  // Attribute dev-done / testing cards to the tester who received the handoff.
+  for (const t of handoffLoad) {
+    if (!t.handoffUserId) continue;
+    const acc = byUser.get(t.handoffUserId) ?? emptyLoad();
+    if (t.status === "DEV_DONE") acc.devDone += 1;
+    else if (t.status === "TESTING") acc.testing += 1;
+    byUser.set(t.handoffUserId, acc);
+  }
   // Only roles flagged assignable show on the board. Non-assignable roles
   // (e.g. system admins) are hidden — but still shown if they actually hold
-  // tasks, so no real work is ever hidden from managers.
-  const hasTasks = new Set(workloadGroups.map((g) => g.userId));
+  // tasks, so no real work is ever hidden from managers. Testers surface via
+  // their handoff cards even when they aren't assignees.
+  const hasTasks = new Set<string>([
+    ...workloadGroups.map((g) => g.userId),
+    ...handoffLoad.map((t) => t.handoffUserId).filter((x): x is string => !!x),
+  ]);
   const workload = activeUsers
     .filter((u) => (u.roleRef?.assignable ?? true) || hasTasks.has(u.id))
     .map((u) => {
-      const c =
-        byUser.get(u.id) ??
-        { todo: 0, inProgress: 0, devReview: 0, devDone: 0, deliveryDone: 0, deliveryFail: 0 };
-      const open = c.todo + c.inProgress + c.devReview + c.devDone;
+      const c = byUser.get(u.id) ?? emptyLoad();
+      const open = c.todo + c.inProgress + c.devReview + c.devDone + c.testing;
       const ot = onTime.get(u.id);
       return {
         id: u.id,
@@ -293,6 +319,7 @@ export async function insights(_req: Request, res: Response) {
       inProgress,
       devReview,
       devDone,
+      testing,
       deliveryDone,
       deliveryFail,
       overdue,
@@ -586,7 +613,8 @@ export async function plan(req: Request, res: Response) {
   const startUtc = new Date(todayStartUtc.getTime() - sinceMonday * DAY_MS);
   const endUtc = new Date(startUtc.getTime() + dayCount * DAY_MS);
 
-  const [setting, holidays, users, assigneeRows, leaves] = await Promise.all([
+  const [setting, holidays, users, assigneeRows, handoffRows, leaves] =
+    await Promise.all([
     prisma.teamSetting.findFirst({ select: { workingDays: true } }),
     prisma.companyHoliday.findMany({
       where: { isActive: true, date: { gte: startUtc, lt: endUtc } },
@@ -602,9 +630,11 @@ export async function plan(req: Request, res: Response) {
       },
       orderBy: { name: "asc" },
     }),
-    // Open tasks (not delivered/failed) per assignee — the forward load.
+    // Dev-side open tasks per assignee — the forward load. DEV_DONE / TESTING are
+    // excluded here because they belong to the handoff tester, not the dev (see
+    // handoffRows below).
     prisma.taskAssignee.findMany({
-      where: { task: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] } } },
+      where: { task: { status: { in: ["TODO", "IN_PROGRESS", "DEV_REVIEW"] } } },
       select: {
         userId: true,
         task: {
@@ -618,6 +648,21 @@ export async function plan(req: Request, res: Response) {
             project: { select: { code: true, color: true, name: true } },
           },
         },
+      },
+    }),
+    // Cards in a tester's hands (dev done / actively testing), attributed to the
+    // handoff user rather than the dev who built them.
+    prisma.task.findMany({
+      where: { status: { in: ["DEV_DONE", "TESTING"] }, handoffUserId: { not: null } },
+      select: {
+        handoffUserId: true,
+        id: true,
+        title: true,
+        status: true,
+        dueDate: true,
+        estimatedFinishAt: true,
+        startedAt: true,
+        project: { select: { code: true, color: true, name: true } },
       },
     }),
     // Approved leaves overlapping the window (full + half day) for shading.
@@ -646,6 +691,21 @@ export async function plan(req: Request, res: Response) {
     const arr = tasksByUser.get(r.userId) ?? [];
     arr.push(r.task);
     tasksByUser.set(r.userId, arr);
+  }
+  // Testers carry their handoff cards (dev done / testing) in the same lane.
+  for (const t of handoffRows) {
+    if (!t.handoffUserId) continue;
+    const arr = tasksByUser.get(t.handoffUserId) ?? [];
+    arr.push({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      dueDate: t.dueDate,
+      estimatedFinishAt: t.estimatedFinishAt,
+      startedAt: t.startedAt,
+      project: t.project,
+    });
+    tasksByUser.set(t.handoffUserId, arr);
   }
 
   // Per-user set of window days covered by an approved leave.

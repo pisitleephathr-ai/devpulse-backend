@@ -6,6 +6,7 @@ const status = z.enum([
   "IN_PROGRESS",
   "DEV_REVIEW",
   "DEV_DONE",
+  "TESTING",
   "DELIVERY_DONE",
   "DELIVERY_FAIL",
 ]);
