@@ -148,6 +148,15 @@ export async function createLeave(req: Request, res: Response) {
   const userId =
     data.userId && isTeamManager(req) ? data.userId : req.user!.id;
 
+  // Auto-approve when the leave type's policy is configured for it (Settings →
+  // ประเภทการลา → อนุมัติอัตโนมัติ). Unknown/legacy type names default to manual.
+  const policy = await prisma.leaveTypePolicy.findUnique({
+    where: { name: data.type },
+    select: { autoApprove: true },
+  });
+  const autoApprove = policy?.autoApprove ?? false;
+  const status: LeaveStatus = autoApprove ? "APPROVED" : "PENDING";
+
   const leave = await prisma.$transaction(async (tx) => {
     const created = await tx.leaveRequest.create({
     data: {
@@ -158,15 +167,18 @@ export async function createLeave(req: Request, res: Response) {
       days: computeDays(data.startDate, data.endDate, data.halfDayPeriod),
       halfDayPeriod: data.halfDayPeriod ?? null,
       reason: data.reason.trim(),
-      status: "PENDING",
+      // Auto-approved leaves have no human reviewer — reviewedById stays null.
+      status,
     },
     include,
     });
     await logActivity(
       {
         userId: req.user!.id,
-        action: "leave.create",
-        message: `${created.user.name} ขอ${typeLabel(created.type)}`,
+        action: autoApprove ? "leave.approve" : "leave.create",
+        message: autoApprove
+          ? `อนุมัติอัตโนมัติ: ${created.user.name} ลา${typeLabel(created.type)}`
+          : `${created.user.name} ขอ${typeLabel(created.type)}`,
         entityType: "leave",
         entityId: created.id,
       },
@@ -177,20 +189,32 @@ export async function createLeave(req: Request, res: Response) {
 
   // Side effects run AFTER commit and must never fail the request.
   try {
-    const recipients = (await managerIds()).filter((id) => id !== leave.userId);
-    await notifyMany(recipients, {
-      type: "leave.submitted",
-      title: "คำขอลาใหม่",
-      message: `${leave.user.name} ขอ${typeLabel(leave.type)} ${daysLabel(leave.days, leave.halfDayPeriod)}`,
-      entityType: "leave",
-      entityId: leave.id,
-    });
-    await pushLeaveCard("PENDING", leave);
-    // DM approvers on their personal LINE (per-user pref + role allow). The card
-    // carries อนุมัติ/ปฏิเสธ postback buttons so they can decide from LINE.
-    if (recipients.length) {
+    if (autoApprove) {
+      // Approved by policy — nobody needs to act. Confirm to the requester (if a
+      // manager filed it for someone else) and inform approvers as an FYI; push
+      // the "approved" card, not the pending-approval one with decision buttons.
+      if (leave.userId !== req.user!.id) {
+        await notify({
+          userId: leave.userId,
+          type: "leave.approved",
+          title: "คำขอลาได้รับอนุมัติ",
+          message: `คำขอ${typeLabel(leave.type)}ของคุณได้รับอนุมัติอัตโนมัติแล้ว`,
+          entityType: "leave",
+          entityId: leave.id,
+        });
+      }
+      const fyi = (await managerIds()).filter((id) => id !== leave.userId);
+      await notifyMany(fyi, {
+        type: "leave.approved",
+        title: "มีการลา (อนุมัติอัตโนมัติ)",
+        message: `${leave.user.name} ลา${typeLabel(leave.type)} ${daysLabel(leave.days, leave.halfDayPeriod)}`,
+        entityType: "leave",
+        entityId: leave.id,
+      });
+      // DM the requester the approved card on their personal LINE.
       const base = appBaseUrl();
-      const card = leaveApprovalFlex(
+      const card = leaveFlex(
+        "APPROVED",
         {
           userName: leave.user.name,
           type: leave.type,
@@ -201,15 +225,50 @@ export async function createLeave(req: Request, res: Response) {
           reason: leave.reason,
           actorName: null,
         },
-        leave.id,
         base ? `${base}/leaves` : undefined
       );
       await pushFlexToUsersWithPref(
-        recipients,
-        "leaveRequest",
+        [leave.userId],
+        "leaveDecision",
         card.altText,
         card.contents
       );
+      await pushLeaveCard("APPROVED", leave);
+    } else {
+      const recipients = (await managerIds()).filter((id) => id !== leave.userId);
+      await notifyMany(recipients, {
+        type: "leave.submitted",
+        title: "คำขอลาใหม่",
+        message: `${leave.user.name} ขอ${typeLabel(leave.type)} ${daysLabel(leave.days, leave.halfDayPeriod)}`,
+        entityType: "leave",
+        entityId: leave.id,
+      });
+      await pushLeaveCard("PENDING", leave);
+      // DM approvers on their personal LINE (per-user pref + role allow). The card
+      // carries อนุมัติ/ปฏิเสธ postback buttons so they can decide from LINE.
+      if (recipients.length) {
+        const base = appBaseUrl();
+        const card = leaveApprovalFlex(
+          {
+            userName: leave.user.name,
+            type: leave.type,
+            startDate: leave.startDate,
+            endDate: leave.endDate,
+            days: leave.days,
+            halfDayPeriod: leave.halfDayPeriod,
+            reason: leave.reason,
+            actorName: null,
+          },
+          leave.id,
+          base ? `${base}/leaves` : undefined
+        );
+        await pushFlexToUsersWithPref(
+          recipients,
+          "leaveRequest",
+          card.altText,
+          card.contents
+        );
+      }
     }
   } catch (err) {
     console.warn("[leave.create] post-commit side-effect failed:", err);
