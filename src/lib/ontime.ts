@@ -23,7 +23,7 @@ export async function onTimeStatsByUser(
   const rows = await prisma.taskAssignee.findMany({
     where: {
       task: {
-        status: "DONE",
+        status: "DELIVERY_DONE",
         completedAt: since ? { not: null, gte: since } : { not: null },
         dueDate: { not: null },
       },

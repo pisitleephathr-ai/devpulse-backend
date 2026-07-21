@@ -36,7 +36,7 @@ async function withStats<T extends { id: string }>(projects: T[]) {
     for (const g of statusGroups) {
       if (g.projectId !== p.id) continue;
       total += g._count._all;
-      if (g.status === "DONE") done += g._count._all;
+      if (g.status === "DELIVERY_DONE") done += g._count._all;
     }
     return {
       ...p,

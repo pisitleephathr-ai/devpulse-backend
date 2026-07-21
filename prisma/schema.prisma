@@ -26,12 +26,17 @@ enum ReportStatus {
   LATE
 }
 
+/// Board workflow: dev pipeline (TODO → IN_PROGRESS → DEV_REVIEW → DEV_DONE)
+/// then delivery/QA (DEV_DONE → DELIVERY_DONE or DELIVERY_FAIL). DELIVERY_DONE
+/// and DELIVERY_FAIL are terminal ("closed"). DELIVERY_FAIL spawns a fresh TODO
+/// task referencing the original instead of moving the card backward.
 enum TaskStatus {
   TODO
   IN_PROGRESS
-  REVIEW
-  READY_TO_TEST
-  DONE
+  DEV_REVIEW
+  DEV_DONE
+  DELIVERY_DONE
+  DELIVERY_FAIL
 }
 
 enum TaskPriority {
@@ -102,6 +107,7 @@ model User {
 
   reports        DailyReport[]
   assignedTasks  Task[]
+  handoffTasks   Task[]         @relation("TaskHandoff")
   leaveRequests  LeaveRequest[] @relation("LeaveRequester")
   reviewedLeaves LeaveRequest[] @relation("LeaveReviewer")
   activityLogs   ActivityLog[]
@@ -249,8 +255,16 @@ model Task {
   priority    TaskPriority @default(MEDIUM)
   status      TaskStatus   @default(TODO)
   dueDate     DateTime?
-  /// when the task first entered DONE (set on that transition, cleared if it
-  /// leaves DONE). Drives on-time-vs-late completion metrics against dueDate.
+  /// planning estimate for when the work will finish — date AND time (e.g.
+  /// 2026-03-18 10:00). Drives the weekly plan / availability view. Distinct
+  /// from `dueDate` (the hard deadline used by overdue/analytics).
+  estimatedFinishAt DateTime?
+  /// stamped the first time the card enters IN_PROGRESS (actual start).
+  startedAt   DateTime?
+  /// stamped when the card enters DEV_DONE (dev finished, handed to tester).
+  devDoneAt   DateTime?
+  /// when the task reached DELIVERY_DONE (terminal success). Drives on-time-vs-
+  /// late completion metrics against dueDate.
   completedAt DateTime?
   createdAt   DateTime     @default(now())
   updatedAt DateTime     @updatedAt
@@ -261,6 +275,15 @@ model Task {
   /// full set lives in the `assignees` join table
   assignee    User?            @relation(fields: [assigneeId], references: [id])
   assigneeId  String?
+  /// the person the card is handed to after DEV_DONE (QA/tester). Chosen at
+  /// creation; auto-added to assignees when the card enters DEV_DONE.
+  handoffUser   User?          @relation("TaskHandoff", fields: [handoffUserId], references: [id], onDelete: SetNull)
+  handoffUserId String?
+  /// when this task was created from a DELIVERY_FAIL of another task, the
+  /// original it was reworked from (self-relation).
+  originTask    Task?          @relation("TaskRework", fields: [originTaskId], references: [id], onDelete: SetNull)
+  originTaskId  String?
+  reworkTasks   Task[]         @relation("TaskRework")
   assignees   TaskAssignee[]
   links       TaskLink[]
   attachments TaskAttachment[]
@@ -273,6 +296,8 @@ model Task {
 
   @@index([projectId])
   @@index([assigneeId])
+  @@index([handoffUserId])
+  @@index([originTaskId])
   @@index([status])
 }
 
@@ -587,7 +612,7 @@ model TeamSetting {
   /// LINE OA notification prefs — which task events fan out to the group.
   lineNotifyNewTask         Boolean  @default(true)
   /// task statuses that trigger a LINE card when moved to them
-  lineNotifyStatuses        String[] @default(["TODO", "DONE"])
+  lineNotifyStatuses        String[] @default(["TODO", "DELIVERY_DONE"])
   /// push a LINE card when a leave request is submitted / approved / rejected
   lineNotifyLeave           Boolean  @default(true)
   /// daily "who's on leave today" summary → LINE group at lineDailyLeaveSummaryTime

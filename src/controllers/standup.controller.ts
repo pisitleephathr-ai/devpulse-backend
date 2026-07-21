@@ -67,7 +67,7 @@ export async function standup(req: Request, res: Response) {
       orderBy: { createdAt: "asc" },
     }),
     prisma.task.count({
-      where: { status: { not: "DONE" }, dueDate: { gte: todayStart, lt: todayEnd } },
+      where: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] }, dueDate: { gte: todayStart, lt: todayEnd } },
     }),
   ]);
 

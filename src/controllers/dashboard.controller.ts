@@ -100,7 +100,7 @@ export async function summary(_req: Request, res: Response) {
   for (const g of taskGroups) {
     const acc = byProject.get(g.projectId) ?? { done: 0, total: 0 };
     acc.total += g._count._all;
-    if (g.status === "DONE") acc.done += g._count._all;
+    if (g.status === "DELIVERY_DONE") acc.done += g._count._all;
     byProject.set(g.projectId, acc);
   }
   const projectProgress = projects.map((p) => {
@@ -150,13 +150,13 @@ export async function insights(_req: Request, res: Response) {
   ] = await Promise.all([
     prisma.task.groupBy({ by: ["status"], _count: { _all: true } }),
     prisma.task.count({
-      where: { status: { not: "DONE" }, dueDate: { lt: todayStart } },
+      where: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] }, dueDate: { lt: todayStart } },
     }),
     prisma.task.count({
-      where: { status: { not: "DONE" }, dueDate: { gte: todayStart, lte: todayEnd } },
+      where: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] }, dueDate: { gte: todayStart, lte: todayEnd } },
     }),
     prisma.task.count({
-      where: { status: { not: "DONE" }, dueDate: { gte: todayStart, lte: weekEnd } },
+      where: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] }, dueDate: { gte: todayStart, lte: weekEnd } },
     }),
     prisma.user.findMany({
       where: { active: true },
@@ -186,7 +186,7 @@ export async function insights(_req: Request, res: Response) {
       select: { userId: true, task: { select: { status: true } } },
     }),
     prisma.task.findMany({
-      where: { status: "DONE" },
+      where: { status: "DELIVERY_DONE" },
       orderBy: { updatedAt: "desc" },
       take: 6,
       include: {
@@ -200,10 +200,11 @@ export async function insights(_req: Request, res: Response) {
     statusGroups.find((g) => g.status === s)?._count._all ?? 0;
   const todo = countBy("TODO");
   const inProgress = countBy("IN_PROGRESS");
-  const review = countBy("REVIEW");
-  const readyToTest = countBy("READY_TO_TEST");
-  const done = countBy("DONE");
-  const total = todo + inProgress + review + readyToTest + done;
+  const devReview = countBy("DEV_REVIEW");
+  const devDone = countBy("DEV_DONE");
+  const deliveryDone = countBy("DELIVERY_DONE");
+  const deliveryFail = countBy("DELIVERY_FAIL");
+  const total = todo + inProgress + devReview + devDone + deliveryDone + deliveryFail;
 
   // Report submission status for the reference day. Only users required to
   // submit a daily report are counted — exempt users never appear as missing
@@ -238,20 +239,21 @@ export async function insights(_req: Request, res: Response) {
     .filter((b) => b.text.length > 0)
     .slice(0, 6);
 
-  // Per-person workload (open = not done).
+  // Per-person workload (open = not yet delivered).
   const byUser = new Map<
     string,
-    { todo: number; inProgress: number; review: number; readyToTest: number; done: number }
+    { todo: number; inProgress: number; devReview: number; devDone: number; deliveryDone: number; deliveryFail: number }
   >();
   for (const g of workloadGroups) {
     const acc =
       byUser.get(g.userId) ??
-      { todo: 0, inProgress: 0, review: 0, readyToTest: 0, done: 0 };
+      { todo: 0, inProgress: 0, devReview: 0, devDone: 0, deliveryDone: 0, deliveryFail: 0 };
     if (g.task.status === "TODO") acc.todo += 1;
     else if (g.task.status === "IN_PROGRESS") acc.inProgress += 1;
-    else if (g.task.status === "REVIEW") acc.review += 1;
-    else if (g.task.status === "READY_TO_TEST") acc.readyToTest += 1;
-    else if (g.task.status === "DONE") acc.done += 1;
+    else if (g.task.status === "DEV_REVIEW") acc.devReview += 1;
+    else if (g.task.status === "DEV_DONE") acc.devDone += 1;
+    else if (g.task.status === "DELIVERY_DONE") acc.deliveryDone += 1;
+    else if (g.task.status === "DELIVERY_FAIL") acc.deliveryFail += 1;
     byUser.set(g.userId, acc);
   }
   // Only roles flagged assignable show on the board. Non-assignable roles
@@ -263,8 +265,8 @@ export async function insights(_req: Request, res: Response) {
     .map((u) => {
       const c =
         byUser.get(u.id) ??
-        { todo: 0, inProgress: 0, review: 0, readyToTest: 0, done: 0 };
-      const open = c.todo + c.inProgress + c.review + c.readyToTest;
+        { todo: 0, inProgress: 0, devReview: 0, devDone: 0, deliveryDone: 0, deliveryFail: 0 };
+      const open = c.todo + c.inProgress + c.devReview + c.devDone;
       const ot = onTime.get(u.id);
       return {
         id: u.id,
@@ -274,7 +276,7 @@ export async function insights(_req: Request, res: Response) {
         onLeave: onLeave.has(u.id),
         ...c,
         open,
-        total: open + c.done,
+        total: open + c.deliveryDone + c.deliveryFail,
         // on-time completion (null rate when nothing closed yet with a due date)
         closed: ot?.closed ?? 0,
         onTimeClosed: ot?.onTime ?? 0,
@@ -289,13 +291,14 @@ export async function insights(_req: Request, res: Response) {
       total,
       todo,
       inProgress,
-      review,
-      readyToTest,
-      done,
+      devReview,
+      devDone,
+      deliveryDone,
+      deliveryFail,
       overdue,
       dueToday,
       dueThisWeek,
-      completionRate: total ? Math.round((done / total) * 100) : 0,
+      completionRate: total ? Math.round((deliveryDone / total) * 100) : 0,
     },
     reports: {
       date: today,
@@ -381,7 +384,7 @@ export async function velocity(req: Request, res: Response) {
 
   // Tasks completed within the window (velocity + cycle-time population).
   const doneTasks = await prisma.task.findMany({
-    where: { status: "DONE", completedAt: { gte: startUtc } },
+    where: { status: "DELIVERY_DONE", completedAt: { gte: startUtc } },
     select: { id: true, createdAt: true, completedAt: true },
   });
 
@@ -462,7 +465,7 @@ export async function flow(req: Request, res: Response) {
 
   const [openTasks, createdRows, completedRows, openNow] = await Promise.all([
     prisma.task.findMany({
-      where: { status: { not: "DONE" } },
+      where: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] } },
       select: {
         id: true,
         title: true,
@@ -479,10 +482,10 @@ export async function flow(req: Request, res: Response) {
       select: { createdAt: true },
     }),
     prisma.task.findMany({
-      where: { status: "DONE", completedAt: { gte: startUtc } },
+      where: { status: "DELIVERY_DONE", completedAt: { gte: startUtc } },
       select: { completedAt: true },
     }),
-    prisma.task.count({ where: { status: { not: "DONE" } } }),
+    prisma.task.count({ where: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] } } }),
   ]);
 
   // "Entered current status" per open task = its most recent task.status log.
