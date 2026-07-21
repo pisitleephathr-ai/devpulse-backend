@@ -567,3 +567,133 @@ export async function flow(req: Request, res: Response) {
     },
   });
 }
+
+/**
+ * Weekly plan (1–2 weeks): a forward-looking, per-person view for the team
+ * lead. For each assignable person it returns their open (not-yet-delivered)
+ * tasks with the planning estimate (`estimatedFinishAt`), when they next become
+ * free (the latest estimate among their open tasks), and which days in the
+ * window they're on approved leave. Also returns the day cells with working-day
+ * / holiday flags so the calendar can shade non-working days. Starts on the
+ * Monday of the current Bangkok week.
+ */
+export async function plan(req: Request, res: Response) {
+  const weeks = Math.min(2, Math.max(1, Number(req.query.weeks) || 1));
+  const dayCount = weeks * 7;
+
+  const todayStartUtc = startOfBangkokDayUtc(getBangkokDateString());
+  const sinceMonday = (getBangkokWeekday() + 6) % 7; // Mon→0 … Sun→6
+  const startUtc = new Date(todayStartUtc.getTime() - sinceMonday * DAY_MS);
+  const endUtc = new Date(startUtc.getTime() + dayCount * DAY_MS);
+
+  const [setting, holidays, users, assigneeRows, leaves] = await Promise.all([
+    prisma.teamSetting.findFirst({ select: { workingDays: true } }),
+    prisma.companyHoliday.findMany({
+      where: { isActive: true, date: { gte: startUtc, lt: endUtc } },
+      select: { date: true, name: true },
+    }),
+    prisma.user.findMany({
+      where: { active: true },
+      select: {
+        id: true,
+        name: true,
+        avatarKey: true,
+        roleRef: { select: { assignable: true } },
+      },
+      orderBy: { name: "asc" },
+    }),
+    // Open tasks (not delivered/failed) per assignee — the forward load.
+    prisma.taskAssignee.findMany({
+      where: { task: { status: { notIn: ["DELIVERY_DONE", "DELIVERY_FAIL"] } } },
+      select: {
+        userId: true,
+        task: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            dueDate: true,
+            estimatedFinishAt: true,
+            startedAt: true,
+            project: { select: { code: true, color: true, name: true } },
+          },
+        },
+      },
+    }),
+    // Approved leaves overlapping the window (full + half day) for shading.
+    prisma.leaveRequest.findMany({
+      where: { status: "APPROVED", startDate: { lt: endUtc }, endDate: { gte: startUtc } },
+      select: { userId: true, startDate: true, endDate: true },
+    }),
+  ]);
+
+  const workingSet = new Set(
+    (setting?.workingDays ?? "1,2,3,4,5").split(",").filter(Boolean).map(Number)
+  );
+  const holidayByDate = new Map<string, string>();
+  for (const h of holidays) holidayByDate.set(getBangkokDateString(h.date), h.name);
+
+  const days = Array.from({ length: dayCount }, (_, i) => {
+    const d = new Date(startUtc.getTime() + i * DAY_MS);
+    const date = getBangkokDateString(d);
+    const weekday = getBangkokWeekday(d);
+    const holiday = holidayByDate.get(date) ?? null;
+    return { date, weekday, isWorkingDay: workingSet.has(weekday) && !holiday, holiday };
+  });
+
+  const tasksByUser = new Map<string, typeof assigneeRows[number]["task"][]>();
+  for (const r of assigneeRows) {
+    const arr = tasksByUser.get(r.userId) ?? [];
+    arr.push(r.task);
+    tasksByUser.set(r.userId, arr);
+  }
+
+  // Per-user set of window days covered by an approved leave.
+  const leaveDatesByUser = new Map<string, Set<string>>();
+  for (const lv of leaves) {
+    const set = leaveDatesByUser.get(lv.userId) ?? new Set<string>();
+    for (const c of days) {
+      const cellStart = startOfBangkokDayUtc(c.date);
+      const cellEnd = new Date(cellStart.getTime() + DAY_MS);
+      if (lv.startDate < cellEnd && lv.endDate >= cellStart) set.add(c.date);
+    }
+    leaveDatesByUser.set(lv.userId, set);
+  }
+
+  const nowMs = Date.now();
+  const people = users
+    .filter((u) => (u.roleRef?.assignable ?? true) || tasksByUser.has(u.id))
+    .map((u) => {
+      const tks = [...(tasksByUser.get(u.id) ?? [])].sort((a, b) => {
+        const ea = a.estimatedFinishAt ? a.estimatedFinishAt.getTime() : Infinity;
+        const eb = b.estimatedFinishAt ? b.estimatedFinishAt.getTime() : Infinity;
+        return ea - eb;
+      });
+      // "Free from" = the latest estimate among open tasks (busy until then).
+      const estimates = tks
+        .map((t) => t.estimatedFinishAt)
+        .filter((d): d is Date => !!d);
+      const latest = estimates.length
+        ? estimates.reduce((a, b) => (a > b ? a : b))
+        : null;
+      return {
+        id: u.id,
+        name: u.name,
+        avatarKey: u.avatarKey,
+        openCount: tks.length,
+        freeFrom: latest && latest.getTime() > nowMs ? latest.toISOString() : null,
+        onLeaveDates: [...(leaveDatesByUser.get(u.id) ?? [])],
+        tasks: tks.map((t) => ({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          dueDate: t.dueDate,
+          estimatedFinishAt: t.estimatedFinishAt,
+          startedAt: t.startedAt,
+          project: t.project,
+        })),
+      };
+    });
+
+  res.json({ weeks, weekStart: getBangkokDateString(startUtc), days, people });
+}
