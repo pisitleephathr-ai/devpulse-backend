@@ -22,6 +22,7 @@ export const updateSettingsSchema = z
         "IN_PROGRESS",
         "DEV_REVIEW",
         "DEV_DONE",
+        "TESTING",
         "DELIVERY_DONE",
         "DELIVERY_FAIL",
       ])

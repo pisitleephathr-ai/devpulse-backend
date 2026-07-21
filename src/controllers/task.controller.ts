@@ -13,7 +13,7 @@ import {
 import { taskCreatedFlex, taskStatusFlex } from "../lib/line-messages";
 import { isTeamManager, hasPermission } from "../lib/authz";
 import { PERMISSIONS } from "../lib/roles";
-import { isAllowedTransition, isDeliveryTarget } from "../lib/task-workflow";
+import { isAllowedTransition, isTesterTarget } from "../lib/task-workflow";
 import * as cld from "../lib/cloudinary";
 import { AppError } from "../middleware/error";
 import type {
@@ -30,6 +30,7 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
   IN_PROGRESS: "กำลังทำ",
   DEV_REVIEW: "รีวิวโค้ด",
   DEV_DONE: "Dev เสร็จ",
+  TESTING: "กำลังทดสอบ",
   DELIVERY_DONE: "ส่งมอบสำเร็จ",
   DELIVERY_FAIL: "ส่งมอบไม่ผ่าน",
 };
@@ -87,9 +88,10 @@ function assertTransition(
     throw new AppError(400, "ย้ายสถานะข้ามขั้นหรือย้อนกลับไม่ได้ ต้องไปทีละขั้นตามลำดับงาน");
   }
   const uid = req.user!.id;
-  if (isDeliveryTarget(to)) {
+  if (isTesterTarget(to)) {
+    // Tester-owned moves: start testing (TESTING) + the final verdict.
     if (task.handoffUserId !== uid) {
-      throw new AppError(403, "เฉพาะผู้รับต่อ (ผู้ทดสอบ) เท่านั้นที่ย้ายไปขั้นส่งมอบได้");
+      throw new AppError(403, "เฉพาะผู้รับต่อ (ผู้ทดสอบ) เท่านั้นที่ย้ายเข้าขั้นทดสอบ/ส่งมอบได้");
     }
   } else {
     const isAssignee =
@@ -268,19 +270,25 @@ export async function createTask(req: Request, res: Response) {
   res.status(201).json({ task: flatten(task) });
 }
 
-/** Managers/admins may edit any task; others only tasks they are assigned to. */
+/**
+ * Managers/admins may edit any task; others only tasks they own — either as an
+ * assignee (dev side) or as the handoff tester. The tester is intentionally NOT
+ * added to the assignee list, so they're allowed here explicitly.
+ */
 async function assertCanEdit(req: Request, taskId: string) {
   if (isTeamManager(req)) return;
   const existing = await prisma.task.findUnique({
     where: { id: taskId },
-    select: { assigneeId: true, assignees: { select: { userId: true } } },
+    select: { assigneeId: true, handoffUserId: true, assignees: { select: { userId: true } } },
   });
   if (!existing) throw new AppError(404, "ไม่พบงาน");
-  const isAssignee =
-    existing.assigneeId === req.user!.id ||
-    existing.assignees.some((a) => a.userId === req.user!.id);
-  if (!isAssignee) {
-    throw new AppError(403, "แก้ไขได้เฉพาะงานที่ได้รับมอบหมายให้คุณ");
+  const uid = req.user!.id;
+  const canEdit =
+    existing.assigneeId === uid ||
+    existing.handoffUserId === uid ||
+    existing.assignees.some((a) => a.userId === uid);
+  if (!canEdit) {
+    throw new AppError(403, "แก้ไขได้เฉพาะงานที่ได้รับมอบหมายหรือที่คุณเป็นผู้รับต่อ");
   }
 }
 
@@ -403,6 +411,7 @@ export async function updateTaskStatus(req: Request, res: Response) {
       status: true,
       startedAt: true,
       devDoneAt: true,
+      testStartedAt: true,
       handoffUserId: true,
       assigneeId: true,
       assignees: { select: { userId: true } },
@@ -425,6 +434,10 @@ export async function updateTaskStatus(req: Request, res: Response) {
         ...(status === "DEV_DONE"
           ? { devDoneAt: before.devDoneAt ?? new Date() }
           : {}),
+        // Actual test start — stamped when the tester moves it into TESTING.
+        ...(status === "TESTING"
+          ? { testStartedAt: before.testStartedAt ?? new Date() }
+          : {}),
         // Completion = reaching DELIVERY_DONE (terminal success); cleared if a
         // manager moves it back out.
         completedAt:
@@ -435,14 +448,8 @@ export async function updateTaskStatus(req: Request, res: Response) {
             : null,
       },
     });
-    // Entering DEV_DONE hands the card to the tester — auto-add them as an
-    // assignee so they can pick it up and drive the delivery-side moves.
-    if (status === "DEV_DONE" && before.handoffUserId) {
-      await tx.taskAssignee.createMany({
-        data: [{ taskId: id, userId: before.handoffUserId, assignedById: req.user!.id }],
-        skipDuplicates: true,
-      });
-    }
+    // The handoff tester is kept SEPARATE from assignees (they own the card from
+    // DEV_DONE onward via handoffUserId + assertCanEdit — no assignee row added).
     return tx.task.findUnique({ where: { id }, include });
   }))!;
 
@@ -454,17 +461,27 @@ export async function updateTaskStatus(req: Request, res: Response) {
     entityId: task.id,
   });
 
-  // Notify every assignee except whoever moved it.
-  await notifyMany(
-    task.assignees.map((a) => a.userId).filter((uid) => uid !== req.user!.id),
-    {
-      type: "task.status",
-      title: "สถานะงานเปลี่ยนแปลง",
-      message: `"${task.title}" ถูกย้ายไป ${STATUS_LABEL[status]}`,
+  // Notify every assignee except whoever moved it. On the DEV_DONE handoff also
+  // ping the tester (who isn't an assignee) that the card is theirs to test.
+  const notifyIds = new Set(
+    task.assignees.map((a) => a.userId).filter((uid) => uid !== req.user!.id)
+  );
+  await notifyMany([...notifyIds], {
+    type: "task.status",
+    title: "สถานะงานเปลี่ยนแปลง",
+    message: `"${task.title}" ถูกย้ายไป ${STATUS_LABEL[status]}`,
+    entityType: "task",
+    entityId: task.id,
+  });
+  if (status === "DEV_DONE" && task.handoffUserId && task.handoffUserId !== req.user!.id) {
+    await notifyMany([task.handoffUserId], {
+      type: "task.assigned",
+      title: "มีงานรอทดสอบ",
+      message: `"${task.title}" พร้อมให้คุณทดสอบแล้ว`,
       entityType: "task",
       entityId: task.id,
-    }
-  );
+    });
+  }
 
   // Announce the status change on LINE — group card respects the team's status
   // toggle; personal DMs respect each assignee's own pref.

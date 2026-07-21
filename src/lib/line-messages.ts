@@ -18,6 +18,7 @@ const STATUS: Record<TaskStatus, { label: string; color: string }> = {
   IN_PROGRESS: { label: "กำลังทำ", color: "#2563eb" },
   DEV_REVIEW: { label: "รีวิวโค้ด", color: "#7c3aed" },
   DEV_DONE: { label: "Dev เสร็จ", color: "#0891b2" },
+  TESTING: { label: "กำลังทดสอบ", color: "#0ea5e9" },
   DELIVERY_DONE: { label: "ส่งมอบสำเร็จ", color: "#16a34a" },
   DELIVERY_FAIL: { label: "ส่งมอบไม่ผ่าน", color: "#dc2626" },
 };
