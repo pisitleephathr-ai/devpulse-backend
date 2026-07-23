@@ -183,11 +183,15 @@ export async function insights(_req: Request, res: Response) {
       },
     }),
     // Workload counts each assigned user once per task (multi-assignee aware).
-    // DEV_DONE / TESTING are intentionally NOT counted here — once a card leaves
-    // the dev's hands it belongs to the handoff tester (see handoffLoad below),
-    // so the dev is no longer shown as having pending work on it.
+    // DEV_DONE / TESTING with a handoff tester belong to that tester (see
+    // handoffLoad below), so they're skipped for the dev; but the same cards
+    // WITHOUT a tester fall back to the dev so no work is orphaned — hence we
+    // also need each task's handoffUserId here.
     prisma.taskAssignee.findMany({
-      select: { userId: true, task: { select: { status: true } } },
+      select: {
+        userId: true,
+        task: { select: { status: true, handoffUserId: true } },
+      },
     }),
     // Cards in the tester's hands (dev done / actively testing) are attributed to
     // the handoff user (the tester), who is intentionally NOT an assignee.
@@ -264,15 +268,19 @@ export async function insights(_req: Request, res: Response) {
   const byUser = new Map<string, ReturnType<typeof emptyLoad>>();
   for (const g of workloadGroups) {
     const acc = byUser.get(g.userId) ?? emptyLoad();
-    if (g.task.status === "TODO") acc.todo += 1;
-    else if (g.task.status === "IN_PROGRESS") acc.inProgress += 1;
-    else if (g.task.status === "DEV_REVIEW") acc.devReview += 1;
-    // DEV_DONE / TESTING are attributed to the handoff tester, not the dev.
-    else if (g.task.status === "DELIVERY_DONE") acc.deliveryDone += 1;
-    else if (g.task.status === "DELIVERY_FAIL") acc.deliveryFail += 1;
+    const st = g.task.status;
+    if (st === "TODO") acc.todo += 1;
+    else if (st === "IN_PROGRESS") acc.inProgress += 1;
+    else if (st === "DEV_REVIEW") acc.devReview += 1;
+    // DEV_DONE / TESTING with a tester belong to that tester (handoffLoad below);
+    // without one they stay on the dev so the card isn't lost from all workloads.
+    else if (st === "DEV_DONE" && !g.task.handoffUserId) acc.devDone += 1;
+    else if (st === "TESTING" && !g.task.handoffUserId) acc.testing += 1;
+    else if (st === "DELIVERY_DONE") acc.deliveryDone += 1;
+    else if (st === "DELIVERY_FAIL") acc.deliveryFail += 1;
     byUser.set(g.userId, acc);
   }
-  // Attribute dev-done / testing cards to the tester who received the handoff.
+  // Attribute dev-done / testing cards that HAVE a tester to that tester.
   for (const t of handoffLoad) {
     if (!t.handoffUserId) continue;
     const acc = byUser.get(t.handoffUserId) ?? emptyLoad();
@@ -630,11 +638,18 @@ export async function plan(req: Request, res: Response) {
       },
       orderBy: { name: "asc" },
     }),
-    // Dev-side open tasks per assignee — the forward load. DEV_DONE / TESTING are
-    // excluded here because they belong to the handoff tester, not the dev (see
-    // handoffRows below).
+    // Dev-side open tasks per assignee — the forward load. DEV_DONE / TESTING
+    // are handled by the handoff tester (handoffRows below) when a tester is set;
+    // when none is set they fall back to the dev here so the card isn't lost.
     prisma.taskAssignee.findMany({
-      where: { task: { status: { in: ["TODO", "IN_PROGRESS", "DEV_REVIEW"] } } },
+      where: {
+        task: {
+          OR: [
+            { status: { in: ["TODO", "IN_PROGRESS", "DEV_REVIEW"] } },
+            { status: { in: ["DEV_DONE", "TESTING"] }, handoffUserId: null },
+          ],
+        },
+      },
       select: {
         userId: true,
         task: {
