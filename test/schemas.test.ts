@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loginSchema } from "../src/schemas/auth.schema";
+import {
+  forgotPasswordSchema,
+  loginSchema,
+  resetPasswordSchema,
+} from "../src/schemas/auth.schema";
 import {
   createReportSchema,
   updateReportSchema,
@@ -17,6 +21,22 @@ test("loginSchema requires a valid email and a password", () => {
   assert.equal(ok(loginSchema, { email: "a@b.co", password: "x" }), true);
   assert.equal(ok(loginSchema, { email: "not-an-email", password: "x" }), false);
   assert.equal(ok(loginSchema, { email: "a@b.co" }), false);
+});
+
+test("forgotPasswordSchema requires a valid email and normalizes it", () => {
+  assert.equal(ok(forgotPasswordSchema, { email: "a@b.co" }), true);
+  assert.equal(ok(forgotPasswordSchema, { email: "not-an-email" }), false);
+  assert.equal(ok(forgotPasswordSchema, {}), false);
+  const r = forgotPasswordSchema.safeParse({ email: "  Boss@DevPulse.IO " });
+  assert.equal(r.success && r.data.email, "boss@devpulse.io");
+});
+
+test("resetPasswordSchema needs token, 8+ char password, matching confirm", () => {
+  const base = { token: "t", newPassword: "abcd1234", confirmPassword: "abcd1234" };
+  assert.equal(ok(resetPasswordSchema, base), true);
+  assert.equal(ok(resetPasswordSchema, { ...base, token: "" }), false);
+  assert.equal(ok(resetPasswordSchema, { ...base, newPassword: "short", confirmPassword: "short" }), false);
+  assert.equal(ok(resetPasswordSchema, { ...base, confirmPassword: "different" }), false);
 });
 
 test("createReportSchema requires projectId + did; relatedTaskIds is optional", () => {

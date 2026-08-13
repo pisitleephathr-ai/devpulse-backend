@@ -50,6 +50,9 @@ enum LeaveStatus {
   PENDING
   APPROVED
   REJECTED
+  /// self-service "แจ้งติดธุระ": APPROVED = active, CANCELLED = ยกเลิก.
+  /// PENDING/REJECTED are legacy (kept for old rows) and no longer produced.
+  CANCELLED
 }
 
 /// How a task attachment was provided.
@@ -119,6 +122,7 @@ model User {
   uploadedAttachments TaskAttachment[] @relation("AttachmentUploader")
   uploadIntents  UploadIntent[]
   lineLinkCode   LineLinkCode?
+  passwordResetTokens PasswordResetToken[]
   actionItemsAssigned ActionItem[] @relation("ActionItemAssignee")
   actionItemsCreated  ActionItem[] @relation("ActionItemCreatedBy")
   kudosSent     Kudos[] @relation("KudosFrom")
@@ -141,6 +145,26 @@ model LineLinkCode {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([expiresAt])
+}
+
+/// A one-time password-reset grant. Created when a user requests a reset from
+/// the login page; the raw token is emailed inside the reset link and NEVER
+/// stored — only its SHA-256 hash lives here, so a DB leak can't be used to
+/// reset anyone's password. Short-lived and single-use (deleted once consumed).
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  /// sha256(rawToken) as hex — the raw token exists only in the emailed link
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  /// set when the token is consumed (kept briefly for audit before cleanup)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
   @@index([expiresAt])
 }
 

@@ -84,3 +84,39 @@ export function welcomeEmailHtml(input: {
   </div></body></html>`;
   return { subject, html };
 }
+
+/** Branded password-reset email: a single time-limited button + fallback link. */
+export function passwordResetEmailHtml(input: {
+  name: string;
+  resetUrl: string;
+  /** how long the link is valid, in minutes (for the copy) */
+  ttlMinutes: number;
+}): { subject: string; html: string } {
+  const subject = "ตั้งรหัสผ่านใหม่ DevPulse";
+  const url = esc(input.resetUrl);
+  const html = `<!doctype html><html><body style="margin:0;background:#f1f5f9;font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#0f172a">
+  <div style="max-width:520px;margin:0 auto;padding:24px">
+    <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden">
+      <div style="background:#0d9488;padding:22px 28px">
+        <div style="color:#ffffff;font-size:20px;font-weight:800">DevPulse</div>
+        <div style="color:#ccfbf1;font-size:13px;margin-top:2px">ตั้งรหัสผ่านใหม่</div>
+      </div>
+      <div style="padding:28px">
+        <p style="font-size:16px;margin:0 0 6px">สวัสดีคุณ${esc(input.name)} 👋</p>
+        <p style="font-size:14px;color:#475569;line-height:1.7;margin:0 0 20px">
+          เราได้รับคำขอตั้งรหัสผ่านใหม่สำหรับบัญชีของคุณ กดปุ่มด้านล่างเพื่อตั้งรหัสผ่านใหม่
+          ลิงก์นี้ใช้ได้ภายใน ${input.ttlMinutes} นาที และใช้ได้เพียงครั้งเดียว
+        </p>
+        <a href="${url}" style="display:inline-block;background:#0d9488;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 28px;border-radius:10px;font-size:15px">ตั้งรหัสผ่านใหม่</a>
+        <p style="font-size:12px;color:#64748b;line-height:1.7;margin:22px 0 0">
+          หากปุ่มกดไม่ได้ ให้คัดลอกลิงก์นี้ไปวางในเบราว์เซอร์:<br>
+          <span style="word-break:break-all;color:#0d9488">${url}</span>
+        </p>
+        <p style="font-size:12px;color:#94a3b8;line-height:1.6;margin:22px 0 0">
+          หากคุณไม่ได้เป็นผู้ร้องขอ กรุณาละเว้นอีเมลฉบับนี้ รหัสผ่านเดิมของคุณจะยังใช้งานได้ตามปกติ
+        </p>
+      </div>
+    </div>
+  </div></body></html>`;
+  return { subject, html };
+}

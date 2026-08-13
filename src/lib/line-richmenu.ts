@@ -32,7 +32,7 @@ type Cell =
 /** The 6 buttons, left→right, top→bottom. Row 1 = in-chat, row 2 = open web. */
 export const CELLS: Cell[] = [
   { kind: "chat", label: "งานของฉัน", sub: "MY TASKS", icon: "tasks", cmd: "my_tasks", displayText: "งานของฉัน" },
-  { kind: "chat", label: "ใครลาวันนี้", sub: "ON LEAVE TODAY", icon: "umbrella", cmd: "leave_today", displayText: "ใครลาวันนี้" },
+  { kind: "chat", label: "ใครติดธุระ", sub: "BUSY TODAY", icon: "umbrella", cmd: "leave_today", displayText: "ใครติดธุระวันนี้" },
   { kind: "chat", label: "สถานะรายงานวันนี้", sub: "REPORT STATUS", icon: "chart", cmd: "report_today", displayText: "สถานะรายงานวันนี้" },
   { kind: "web", label: "บอร์ดงาน", sub: "WORK BOARD", icon: "board", path: "/tasks" },
   { kind: "web", label: "ปฏิทินทีม", sub: "TEAM CALENDAR", icon: "calendar", path: "/calendar" },

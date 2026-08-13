@@ -70,7 +70,7 @@ async function sendLeaveSummary(today: string): Promise<SendResult> {
     },
     orderBy: { user: { name: "asc" } },
   });
-  if (!leaves.length) return { pushed: false, reason: "วันนี้ไม่มีใครลา" };
+  if (!leaves.length) return { pushed: false, reason: "วันนี้ไม่มีใครติดธุระ" };
   const entries: LeaveTodayEntry[] = leaves.map((l) => ({
     name: l.user.name,
     type: l.type,

@@ -9,14 +9,14 @@ import {
 
 test("roleAllowsNotif: empty/undefined list allows everything (default)", () => {
   assert.equal(roleAllowsNotif(undefined, "taskAssigned"), true);
-  assert.equal(roleAllowsNotif(null, "leaveDecision"), true);
+  assert.equal(roleAllowsNotif(null, "mention"), true);
   assert.equal(roleAllowsNotif([], "reportReminder"), true);
 });
 
 test("roleAllowsNotif: non-empty list allows only listed keys", () => {
   const allowed = ["taskAssigned"];
   assert.equal(roleAllowsNotif(allowed, "taskAssigned"), true);
-  assert.equal(roleAllowsNotif(allowed, "leaveDecision"), false);
+  assert.equal(roleAllowsNotif(allowed, "mention"), false);
   assert.equal(roleAllowsNotif(allowed, "reportReminder"), false);
 });
 
@@ -34,6 +34,6 @@ test("allowedNotifKeys: filters to the allowed subset, preserving order", () => 
 
 test("notifColumn: maps each key to its User boolean column", () => {
   assert.equal(notifColumn("taskAssigned"), "lineNotifyTaskAssigned");
-  assert.equal(notifColumn("leaveDecision"), "lineNotifyLeaveDecision");
+  assert.equal(notifColumn("mention"), "lineNotifyMention");
   assert.equal(notifColumn("reportReminder"), "lineNotifyReportReminder");
 });
