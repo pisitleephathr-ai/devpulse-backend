@@ -1,22 +1,53 @@
 import type { Request, Response } from "express";
-import type { LeaveStatus, Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { userMiniSelect } from "../lib/selects";
 import { logActivity } from "../lib/activity";
-import { notify, notifyMany } from "../lib/notify";
-import {
-  pushFlexToLineGroup,
-  pushFlexToUsersWithPref,
-  appBaseUrl,
-  getLinePrefs,
-} from "../lib/line";
-import { leaveFlex, leaveApprovalFlex } from "../lib/line-messages";
+import { pushFlexToLineGroup, appBaseUrl, getLinePrefs } from "../lib/line";
+import { leaveFlex } from "../lib/line-messages";
 import { isTeamManager } from "../lib/authz";
+import { getBangkokDateString } from "../lib/date";
 import { AppError } from "../middleware/error";
+import type { CreateLeaveInput, LeaveQuery } from "../schemas/leave.schema";
 
-/** Best-effort LINE card for a leave submit/decision (never throws). */
+const include = {
+  user: { select: userMiniSelect },
+  reviewedBy: { select: userMiniSelect },
+};
+
+// Legacy enum-code → Thai. New types already carry their (freeform) name, so
+// unknown codes fall through to the value itself.
+const TYPE_LABEL: Record<string, string> = {
+  VACATION: "ลาพักร้อน",
+  SICK: "ลาป่วย",
+  PERSONAL: "ลากิจ",
+  PARENTAL: "ลาเลี้ยงดูบุตร",
+};
+const typeLabel = (t: string) => TYPE_LABEL[t] ?? t;
+
+function inclusiveDays(start: Date, end: Date) {
+  const ms = end.getTime() - start.getTime();
+  return Math.max(1, Math.round(ms / 86_400_000) + 1);
+}
+
+/** Half-day counts as 0.5; otherwise the inclusive whole-day count. */
+function computeDays(start: Date, end: Date, half?: string | null) {
+  return half ? 0.5 : inclusiveDays(start, end);
+}
+
+/**
+ * "แจ้งติดธุระ" (notify-busy) is self-service: declaring is effective
+ * immediately (status APPROVED = active), and the owner may cancel it
+ * themselves BEFORE the start date (→ CANCELLED). There is no approver.
+ * We keep the APPROVED value as the "active" state so every downstream
+ * read path that filters `status: "APPROVED"` (dashboard, calendar, weekly
+ * plan, standup, scheduler, bot) keeps working unchanged; CANCELLED rows are
+ * naturally excluded from those.
+ */
+
+/** Best-effort group LINE card announcing a busy declaration / cancellation. */
 async function pushLeaveCard(
-  status: "PENDING" | "APPROVED" | "REJECTED",
+  status: "APPROVED" | "CANCELLED",
   leave: {
     user: { name: string };
     type: string;
@@ -25,7 +56,6 @@ async function pushLeaveCard(
     days: number;
     halfDayPeriod: string | null;
     reason: string | null;
-    reviewedBy?: { name: string } | null;
   }
 ) {
   if (!(await getLinePrefs()).notifyLeave) return;
@@ -40,82 +70,18 @@ async function pushLeaveCard(
       days: leave.days,
       halfDayPeriod: leave.halfDayPeriod,
       reason: leave.reason,
-      actorName: leave.reviewedBy?.name ?? null,
+      actorName: null,
     },
     base ? `${base}/leaves` : undefined
   );
   await pushFlexToLineGroup(card.altText, card.contents);
 }
 
-/**
- * Ids of active users who can approve leave — recipients of leave-request
- * notifications. Permission-aware: the legacy MANAGER/ADMIN codes OR any role
- * granted TEAM_MANAGE / ADMIN_FULL / LEAVE_APPROVE (so custom roles are
- * notified too, not just the built-in codes).
- */
-async function managerIds(): Promise<string[]> {
-  const managers = await prisma.user.findMany({
-    where: {
-      active: true,
-      roleRef: {
-        is: {
-          OR: [
-            { code: { in: ["MANAGER", "ADMIN"] } },
-            {
-              permissions: {
-                hasSome: ["TEAM_MANAGE", "ADMIN_FULL", "LEAVE_APPROVE"],
-              },
-            },
-          ],
-        },
-      },
-    },
-    select: { id: true },
-  });
-  return managers.map((m) => m.id);
-}
-import type { CreateLeaveInput, LeaveQuery } from "../schemas/leave.schema";
-
-const include = {
-  user: { select: userMiniSelect },
-  reviewedBy: { select: userMiniSelect },
-};
-
-// Legacy enum-code → Thai. New leave types already carry their (freeform) name,
-// so unknown codes fall through to the value itself.
-const TYPE_LABEL: Record<string, string> = {
-  VACATION: "ลาพักร้อน",
-  SICK: "ลาป่วย",
-  PERSONAL: "ลากิจ",
-  PARENTAL: "ลาเลี้ยงดูบุตร",
-};
-const typeLabel = (t: string) => TYPE_LABEL[t] ?? t;
-
-function inclusiveDays(start: Date, end: Date) {
-  const ms = end.getTime() - start.getTime();
-  return Math.max(1, Math.round(ms / 86_400_000) + 1);
-}
-
-/** Half-day leave counts as 0.5; otherwise the inclusive whole-day count. */
-function computeDays(start: Date, end: Date, half?: string | null) {
-  return half ? 0.5 : inclusiveDays(start, end);
-}
-
-const HALF_LABEL: Record<string, string> = {
-  MORNING: "ครึ่งวันเช้า",
-  AFTERNOON: "ครึ่งวันบ่าย",
-};
-
-/** e.g. "1 วัน" or "0.5 วัน (ครึ่งวันเช้า)" */
-function daysLabel(days: number, half?: string | null) {
-  return half ? `${days} วัน (${HALF_LABEL[half] ?? "ครึ่งวัน"})` : `${days} วัน`;
-}
-
 export async function listLeaves(req: Request, res: Response) {
   const q = req.query as unknown as LeaveQuery;
   const isManager = isTeamManager(req);
   const where: Prisma.LeaveRequestWhereInput = {
-    // Non-managers only see their own requests; managers/admins see all.
+    // Non-managers only see their own; managers/admins see all.
     userId: isManager ? q.userId : req.user!.id,
     type: q.type,
     status: q.status,
@@ -133,11 +99,11 @@ export async function getLeave(req: Request, res: Response) {
     where: { id: req.params.id },
     include,
   });
-  if (!leave) throw new AppError(404, "ไม่พบคำขอลา");
-  // Non-managers may only view their own leave request.
+  if (!leave) throw new AppError(404, "ไม่พบรายการแจ้งติดธุระ");
+  // Non-managers may only view their own.
   const isManager = isTeamManager(req);
   if (!isManager && leave.userId !== req.user!.id) {
-    throw new AppError(403, "ไม่มีสิทธิ์ดูคำขอลานี้");
+    throw new AppError(403, "ไม่มีสิทธิ์ดูรายการนี้");
   }
   res.json({ leave });
 }
@@ -145,40 +111,29 @@ export async function getLeave(req: Request, res: Response) {
 export async function createLeave(req: Request, res: Response) {
   const data = req.body as CreateLeaveInput;
 
-  const userId =
-    data.userId && isTeamManager(req) ? data.userId : req.user!.id;
-
-  // Auto-approve when the leave type's policy is configured for it (Settings →
-  // ประเภทการลา → อนุมัติอัตโนมัติ). Unknown/legacy type names default to manual.
-  const policy = await prisma.leaveTypePolicy.findUnique({
-    where: { name: data.type },
-    select: { autoApprove: true },
-  });
-  const autoApprove = policy?.autoApprove ?? false;
-  const status: LeaveStatus = autoApprove ? "APPROVED" : "PENDING";
+  // A manager may still file on behalf of a member; otherwise it's for self.
+  const userId = data.userId && isTeamManager(req) ? data.userId : req.user!.id;
 
   const leave = await prisma.$transaction(async (tx) => {
     const created = await tx.leaveRequest.create({
-    data: {
-      userId,
-      type: data.type,
-      startDate: data.startDate,
-      endDate: data.endDate,
-      days: computeDays(data.startDate, data.endDate, data.halfDayPeriod),
-      halfDayPeriod: data.halfDayPeriod ?? null,
-      reason: data.reason.trim(),
-      // Auto-approved leaves have no human reviewer — reviewedById stays null.
-      status,
-    },
-    include,
+      data: {
+        userId,
+        type: data.type,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        days: computeDays(data.startDate, data.endDate, data.halfDayPeriod),
+        halfDayPeriod: data.halfDayPeriod ?? null,
+        reason: data.reason.trim(),
+        // Active immediately — self-service, no approval.
+        status: "APPROVED",
+      },
+      include,
     });
     await logActivity(
       {
         userId: req.user!.id,
-        action: autoApprove ? "leave.approve" : "leave.create",
-        message: autoApprove
-          ? `อนุมัติอัตโนมัติ: ${created.user.name} ลา${typeLabel(created.type)}`
-          : `${created.user.name} ขอ${typeLabel(created.type)}`,
+        action: "leave.create",
+        message: `${created.user.name} แจ้งติดธุระ (${typeLabel(created.type)})`,
         entityType: "leave",
         entityId: created.id,
       },
@@ -187,127 +142,55 @@ export async function createLeave(req: Request, res: Response) {
     return created;
   });
 
-  // Side effects run AFTER commit and must never fail the request.
+  // Inform the team group (best-effort — never fails the request).
   try {
-    if (autoApprove) {
-      // Approved by policy — nobody needs to act. Confirm to the requester (if a
-      // manager filed it for someone else) and inform approvers as an FYI; push
-      // the "approved" card, not the pending-approval one with decision buttons.
-      if (leave.userId !== req.user!.id) {
-        await notify({
-          userId: leave.userId,
-          type: "leave.approved",
-          title: "คำขอลาได้รับอนุมัติ",
-          message: `คำขอ${typeLabel(leave.type)}ของคุณได้รับอนุมัติอัตโนมัติแล้ว`,
-          entityType: "leave",
-          entityId: leave.id,
-        });
-      }
-      const fyi = (await managerIds()).filter((id) => id !== leave.userId);
-      await notifyMany(fyi, {
-        type: "leave.approved",
-        title: "มีการลา (อนุมัติอัตโนมัติ)",
-        message: `${leave.user.name} ลา${typeLabel(leave.type)} ${daysLabel(leave.days, leave.halfDayPeriod)}`,
-        entityType: "leave",
-        entityId: leave.id,
-      });
-      // DM the requester the approved card on their personal LINE.
-      const base = appBaseUrl();
-      const card = leaveFlex(
-        "APPROVED",
-        {
-          userName: leave.user.name,
-          type: leave.type,
-          startDate: leave.startDate,
-          endDate: leave.endDate,
-          days: leave.days,
-          halfDayPeriod: leave.halfDayPeriod,
-          reason: leave.reason,
-          actorName: null,
-        },
-        base ? `${base}/leaves` : undefined
-      );
-      await pushFlexToUsersWithPref(
-        [leave.userId],
-        "leaveDecision",
-        card.altText,
-        card.contents
-      );
-      await pushLeaveCard("APPROVED", leave);
-    } else {
-      const recipients = (await managerIds()).filter((id) => id !== leave.userId);
-      await notifyMany(recipients, {
-        type: "leave.submitted",
-        title: "คำขอลาใหม่",
-        message: `${leave.user.name} ขอ${typeLabel(leave.type)} ${daysLabel(leave.days, leave.halfDayPeriod)}`,
-        entityType: "leave",
-        entityId: leave.id,
-      });
-      await pushLeaveCard("PENDING", leave);
-      // DM approvers on their personal LINE (per-user pref + role allow). The card
-      // carries อนุมัติ/ปฏิเสธ postback buttons so they can decide from LINE.
-      if (recipients.length) {
-        const base = appBaseUrl();
-        const card = leaveApprovalFlex(
-          {
-            userName: leave.user.name,
-            type: leave.type,
-            startDate: leave.startDate,
-            endDate: leave.endDate,
-            days: leave.days,
-            halfDayPeriod: leave.halfDayPeriod,
-            reason: leave.reason,
-            actorName: null,
-          },
-          leave.id,
-          base ? `${base}/leaves` : undefined
-        );
-        await pushFlexToUsersWithPref(
-          recipients,
-          "leaveRequest",
-          card.altText,
-          card.contents
-        );
-      }
-    }
+    await pushLeaveCard("APPROVED", leave);
   } catch (err) {
-    console.warn("[leave.create] post-commit side-effect failed:", err);
+    console.warn("[leave.create] LINE card failed:", err);
   }
 
   res.status(201).json({ leave });
 }
 
 /**
- * Approve/reject a leave request as `reviewerId`. Shared by the HTTP route and
- * the LINE postback handler. Throws AppError(404) if missing, AppError(409) if
- * already decided. Post-commit side effects (notify + LINE cards) never throw.
+ * Cancel one's own busy declaration. Allowed only while it's still active
+ * (APPROVED) and STRICTLY BEFORE the Bangkok start date — once the start day
+ * arrives it can no longer be cancelled. Sets CANCELLED (kept for history).
  */
-export async function applyLeaveDecision(
-  leaveId: string,
-  reviewerId: string,
-  status: LeaveStatus
-) {
+export async function cancelLeave(req: Request, res: Response) {
   const existing = await prisma.leaveRequest.findUnique({
-    where: { id: leaveId },
-    include: { user: { select: { name: true } } },
+    where: { id: req.params.id },
+    include,
   });
-  if (!existing) throw new AppError(404, "ไม่พบคำขอลา");
-  if (existing.status !== "PENDING") {
-    throw new AppError(409, "คำขอนี้ถูกดำเนินการไปแล้ว");
+  if (!existing) throw new AppError(404, "ไม่พบรายการแจ้งติดธุระ");
+
+  if (existing.userId !== req.user!.id) {
+    throw new AppError(403, "ยกเลิกได้เฉพาะรายการของตนเอง");
+  }
+  if (existing.status !== "APPROVED") {
+    throw new AppError(409, "รายการนี้ถูกยกเลิกไปแล้ว");
+  }
+  // Compare Bangkok calendar dates: today must be before the start day.
+  const today = getBangkokDateString();
+  const startDay = getBangkokDateString(existing.startDate);
+  if (!(today < startDay)) {
+    throw new AppError(
+      400,
+      "ยกเลิกได้เฉพาะก่อนวันที่แจ้งไว้ (พ้นวันเริ่มแล้วยกเลิกไม่ได้)"
+    );
   }
 
-  const verb = status === "APPROVED" ? "อนุมัติ" : "ปฏิเสธ";
   const leave = await prisma.$transaction(async (tx) => {
     const updated = await tx.leaveRequest.update({
-      where: { id: leaveId },
-      data: { status, reviewedById: reviewerId },
+      where: { id: existing.id },
+      data: { status: "CANCELLED" },
       include,
     });
     await logActivity(
       {
-        userId: reviewerId,
-        action: status === "APPROVED" ? "leave.approve" : "leave.reject",
-        message: `${verb}คำขอ${typeLabel(updated.type)}ของ ${existing.user.name}`,
+        userId: req.user!.id,
+        action: "leave.cancel",
+        message: `${updated.user.name} ยกเลิกติดธุระ (${typeLabel(updated.type)})`,
         entityType: "leave",
         entityId: updated.id,
       },
@@ -316,84 +199,28 @@ export async function applyLeaveDecision(
     return updated;
   });
 
-  // Side effects run AFTER commit and must never fail the caller.
   try {
-    // Notify the requester of the decision (unless they reviewed their own).
-    if (leave.userId !== reviewerId) {
-      await notify({
-        userId: leave.userId,
-        type: status === "APPROVED" ? "leave.approved" : "leave.rejected",
-        title: status === "APPROVED" ? "คำขอลาได้รับอนุมัติ" : "คำขอลาถูกปฏิเสธ",
-        message: `คำขอ${typeLabel(leave.type)}ของคุณถูก${verb}แล้ว`,
-        entityType: "leave",
-        entityId: leave.id,
-      });
-      // DM the requester the decision card on their personal LINE — gated by
-      // their own preference (independent of the group toggle).
-      const base = appBaseUrl();
-      const card = leaveFlex(
-        status === "APPROVED" ? "APPROVED" : "REJECTED",
-        {
-          userName: leave.user.name,
-          type: leave.type,
-          startDate: leave.startDate,
-          endDate: leave.endDate,
-          days: leave.days,
-          halfDayPeriod: leave.halfDayPeriod,
-          reason: leave.reason,
-          actorName: leave.reviewedBy?.name ?? null,
-        },
-        base ? `${base}/leaves` : undefined
-      );
-      await pushFlexToUsersWithPref(
-        [leave.userId],
-        "leaveDecision",
-        card.altText,
-        card.contents
-      );
-    }
-    await pushLeaveCard(status === "APPROVED" ? "APPROVED" : "REJECTED", leave);
+    await pushLeaveCard("CANCELLED", leave);
   } catch (err) {
-    console.warn("[leave.decide] post-commit side-effect failed:", err);
+    console.warn("[leave.cancel] LINE card failed:", err);
   }
 
-  return leave;
-}
-
-/** Whether a user holds leave-approval rights (same set that gets notified). */
-export async function canApproveLeave(userId: string): Promise<boolean> {
-  return (await managerIds()).includes(userId);
-}
-
-/** HTTP wrapper — the route is gated by isManagerOrAdmin / TEAM_MANAGE. */
-async function decide(req: Request, res: Response, status: LeaveStatus) {
-  const leave = await applyLeaveDecision(req.params.id, req.user!.id, status);
   res.json({ leave });
 }
 
-export function approveLeave(req: Request, res: Response) {
-  return decide(req, res, "APPROVED");
-}
-
-export function rejectLeave(req: Request, res: Response) {
-  return decide(req, res, "REJECTED");
-}
-
 /**
- * Withdraw/cancel a leave request. The owner may cancel their own request while
- * it is still PENDING; managers/admins may remove any request.
+ * Hard-remove a record. Managers/admins only (cleanup) — members cancel their
+ * own via cancelLeave instead.
  */
 export async function deleteLeave(req: Request, res: Response) {
   const existing = await prisma.leaveRequest.findUnique({
     where: { id: req.params.id },
     include: { user: { select: { name: true } } },
   });
-  if (!existing) throw new AppError(404, "ไม่พบคำขอลา");
+  if (!existing) throw new AppError(404, "ไม่พบรายการแจ้งติดธุระ");
 
-  const isManager = isTeamManager(req);
-  const isOwner = existing.userId === req.user!.id;
-  if (!isManager && !(isOwner && existing.status === "PENDING")) {
-    throw new AppError(403, "ยกเลิกได้เฉพาะคำขอลาของตนเองที่ยังรออนุมัติ");
+  if (!isTeamManager(req)) {
+    throw new AppError(403, "ลบได้เฉพาะผู้ดูแลทีม");
   }
 
   await prisma.leaveRequest.delete({ where: { id: req.params.id } });
@@ -401,7 +228,7 @@ export async function deleteLeave(req: Request, res: Response) {
   await logActivity({
     userId: req.user!.id,
     action: "leave.delete",
-    message: `ยกเลิกคำขอ${typeLabel(existing.type)}ของ ${existing.user.name}`,
+    message: `ลบรายการติดธุระ (${typeLabel(existing.type)}) ของ ${existing.user.name}`,
     entityType: "leave",
     entityId: existing.id,
   });

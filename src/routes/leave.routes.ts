@@ -1,7 +1,6 @@
 import { Router } from "express";
 import * as ctrl from "../controllers/leave.controller";
 import { authenticate } from "../middleware/auth";
-import { isManagerOrAdmin } from "../middleware/authorize";
 import { validate } from "../middleware/validate";
 import { asyncHandler } from "../middleware/error";
 import { createLeaveSchema, leaveQuerySchema } from "../schemas/leave.schema";
@@ -15,21 +14,11 @@ router.get("/", validate({ query: leaveQuerySchema }), asyncHandler(ctrl.listLea
 router.get("/:id", validate({ params: idParam }), asyncHandler(ctrl.getLeave));
 router.post("/", validate({ body: createLeaveSchema }), asyncHandler(ctrl.createLeave));
 
-router.patch(
-  "/:id/approve",
-  isManagerOrAdmin,
-  validate({ params: idParam }),
-  asyncHandler(ctrl.approveLeave)
-);
-router.patch(
-  "/:id/reject",
-  isManagerOrAdmin,
-  validate({ params: idParam }),
-  asyncHandler(ctrl.rejectLeave)
-);
+// Self-cancel a busy declaration (owner-only, before the start date — enforced
+// in the controller).
+router.patch("/:id/cancel", validate({ params: idParam }), asyncHandler(ctrl.cancelLeave));
 
-// Withdraw/cancel — authorization (owner-while-pending or manager) is enforced
-// in the controller, so no role middleware here.
+// Hard-remove — managers/admins only (cleanup); authorization in the controller.
 router.delete("/:id", validate({ params: idParam }), asyncHandler(ctrl.deleteLeave));
 
 export default router;

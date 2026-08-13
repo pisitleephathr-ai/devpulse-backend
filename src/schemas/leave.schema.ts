@@ -3,7 +3,9 @@ import { isSameBangkokDay } from "../lib/date";
 
 // Free-form leave-type name (matches a LeaveTypePolicy.name). Length-bounded.
 const type = z.string().min(1, "กรุณาเลือกประเภทการลา").max(50);
-const status = z.enum(["PENDING", "APPROVED", "REJECTED"]);
+// APPROVED = active "ติดธุระ"; CANCELLED = ยกเลิก. PENDING/REJECTED are legacy
+// (kept in the DB enum for old rows) and no longer produced.
+const status = z.enum(["PENDING", "APPROVED", "REJECTED", "CANCELLED"]);
 const halfDayPeriod = z.enum(["MORNING", "AFTERNOON"]);
 
 export const createLeaveSchema = z

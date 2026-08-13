@@ -5,7 +5,6 @@ import { env } from "../lib/env";
 import { replyToLine } from "../lib/line";
 import { infoFlex } from "../lib/line-messages";
 import { linkByCode, unlinkByLineUserId } from "../lib/line-link";
-import { handleLeaveDecision } from "../lib/line-leave";
 import {
   handleBotCommand,
   isBotCommand,
@@ -85,23 +84,10 @@ async function handleUserEvent(ev: {
     return;
   }
 
-  // Rich-menu buttons fire a postback like "cmd=my_tasks"; leave cards fire
-  // "cmd=leave_approve&id=…" / "cmd=leave_reject&id=…".
+  // Rich-menu buttons fire a postback like "cmd=my_tasks".
   if (ev.type === "postback" && ev.replyToken) {
     const params = new URLSearchParams(ev.postback?.data ?? "");
     const cmd = params.get("cmd") ?? "";
-    if (cmd === "leave_approve" || cmd === "leave_reject") {
-      const id = params.get("id") ?? "";
-      if (id) {
-        const messages = await handleLeaveDecision(
-          lineUserId,
-          id,
-          cmd === "leave_approve" ? "APPROVED" : "REJECTED"
-        );
-        if (messages.length) await replyToLine(ev.replyToken, messages);
-      }
-      return;
-    }
     if (isBotCommand(cmd)) {
       const messages = await handleBotCommand(cmd, lineUserId);
       if (messages.length) await replyToLine(ev.replyToken, messages);

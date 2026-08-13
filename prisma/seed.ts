@@ -122,14 +122,15 @@ async function main() {
   }
 
   /* --------------------------- Leave requests ------------------------- */
-  const lena = users["Lena"];
+  // "แจ้งติดธุระ" is self-service: declarations are active (APPROVED) immediately;
+  // a withdrawn one is CANCELLED. There is no pending/approver review.
   const leavesSeed = [
-    { key: "Tom", type: "VACATION", start: "2026-07-20", end: "2026-07-24", days: 5, reason: "ไปเที่ยวกับครอบครัวที่ลิสบอน", status: "APPROVED", reviewer: lena },
-    { key: "Priya", type: "PERSONAL", start: "2026-07-15", end: "2026-07-15", days: 1, reason: "ย้ายที่อยู่", status: "PENDING", reviewer: null },
-    { key: "Jonas", type: "VACATION", start: "2026-08-03", end: "2026-08-14", days: 10, reason: "พักร้อนช่วงฤดูร้อน", status: "PENDING", reviewer: null },
-    { key: "Maya", type: "PERSONAL", start: "2026-07-31", end: "2026-07-31", days: 1, reason: "นัดพบแพทย์", status: "PENDING", reviewer: null },
-    { key: "Sara", type: "SICK", start: "2026-07-08", end: "2026-07-08", days: 1, reason: "ไข้หวัด", status: "APPROVED", reviewer: lena },
-    { key: "Alex", type: "PERSONAL", start: "2026-06-30", end: "2026-06-30", days: 1, reason: "ติดต่อราชการ", status: "REJECTED", reviewer: lena },
+    { key: "Tom", type: "VACATION", start: "2026-07-20", end: "2026-07-24", days: 5, reason: "ไปเที่ยวกับครอบครัวที่ลิสบอน", status: "APPROVED" },
+    { key: "Priya", type: "PERSONAL", start: "2026-07-15", end: "2026-07-15", days: 1, reason: "ย้ายที่อยู่", status: "APPROVED" },
+    { key: "Jonas", type: "VACATION", start: "2026-08-03", end: "2026-08-14", days: 10, reason: "พักร้อนช่วงฤดูร้อน", status: "APPROVED" },
+    { key: "Maya", type: "PERSONAL", start: "2026-07-31", end: "2026-07-31", days: 1, reason: "นัดพบแพทย์", status: "APPROVED" },
+    { key: "Sara", type: "SICK", start: "2026-07-08", end: "2026-07-08", days: 1, reason: "ไข้หวัด", status: "APPROVED" },
+    { key: "Alex", type: "PERSONAL", start: "2026-06-30", end: "2026-06-30", days: 1, reason: "ติดต่อราชการ", status: "CANCELLED" },
   ] as const;
 
   for (const l of leavesSeed) {
@@ -142,7 +143,6 @@ async function main() {
         days: l.days,
         reason: l.reason,
         status: l.status,
-        reviewedById: l.reviewer,
       },
     });
   }
@@ -155,7 +155,7 @@ async function main() {
     { key: "Alex", action: "task.status", message: 'อเล็กซ์ รุยซ์ ทำ "ปรับแต่ง CI cache" เสร็จแล้ว', at: ago(60) },
     { key: "Tom", action: "report.blocker", message: "ทอม โอคาฟอร์ รายงานอุปสรรคในโปรเจกต์ Orbit Mobile", at: ago(120) },
     { key: "Jonas", action: "report.create", message: "โจนาส เวเบอร์ ส่งรายงานประจำวันแล้ว", at: ago(180) },
-    { key: "Maya", action: "leave.create", message: "มายา เฉิน ขอลากิจวันที่ 31 ก.ค.", at: ago(240) },
+    { key: "Maya", action: "leave.create", message: "มายา เฉิน แจ้งติดธุระ (ลากิจ) วันที่ 31 ก.ค.", at: ago(240) },
     { key: "Sara", action: "task.comment", message: 'ซาร่า ลินด์ควิสต์ คอมเมนต์ใน "แผน QA สำหรับรีลีส 2.4"', at: ago(1440) },
   ] as const;
 

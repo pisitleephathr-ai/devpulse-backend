@@ -50,6 +50,9 @@ enum LeaveStatus {
   PENDING
   APPROVED
   REJECTED
+  /// self-service "แจ้งติดธุระ": APPROVED = active, CANCELLED = ยกเลิก.
+  /// PENDING/REJECTED are legacy (kept for old rows) and no longer produced.
+  CANCELLED
 }
 
 /// How a task attachment was provided.

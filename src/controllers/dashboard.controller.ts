@@ -52,7 +52,11 @@ export async function summary(_req: Request, res: Response) {
     prisma.dailyReport.count({
       where: { date: dayRange, status: "SUBMITTED" },
     }),
-    prisma.leaveRequest.count({ where: { status: "PENDING" } }),
+    // "แจ้งติดธุระ" is self-service (no pending state). This KPI now counts
+    // active/upcoming declarations — those not already ended before today.
+    prisma.leaveRequest.count({
+      where: { status: "APPROVED", endDate: { gte: dayRange.gte } },
+    }),
     prisma.task.count({ where: { status: "IN_PROGRESS" } }),
     prisma.dailyReport.findMany({
       where: { date: dayRange },
@@ -65,15 +69,15 @@ export async function summary(_req: Request, res: Response) {
       select: { id: true, name: true, code: true, color: true },
     }),
     // The dashboard feed shows only core team-work activity: the task board
-    // (task.*), daily reports (report.*), and APPROVED leave requests. Everything
-    // else (projects, comments, pending/rejected leaves, and the sensitive
-    // user.*/role.* admin events) stays on the dedicated Activity audit page.
+    // (task.*), daily reports (report.*), and busy declarations/cancellations.
+    // Everything else (projects, comments, and the sensitive user.*/role.* admin
+    // events) stays on the dedicated Activity audit page.
     prisma.activityLog.findMany({
       where: {
         OR: [
           { action: { startsWith: "task." } },
           { action: { startsWith: "report." } },
-          { action: { in: ["leave.approve", "leave.approved"] } },
+          { action: { in: ["leave.create", "leave.cancel"] } },
         ],
         // Deleting a board attachment is routine housekeeping — keep it out of
         // the shared feed (uploads still show).
@@ -84,7 +88,7 @@ export async function summary(_req: Request, res: Response) {
       include: { user: { select: userMiniSelect } },
     }),
     prisma.leaveRequest.findMany({
-      where: { status: { in: ["APPROVED", "PENDING"] } },
+      where: { status: "APPROVED" },
       orderBy: { startDate: "asc" },
       take: 5,
       include: { user: { select: userMiniSelect } },

@@ -15,8 +15,9 @@ export const LINE_NOTIF_TYPES = [
   { key: "taskAssigned", column: "lineNotifyTaskAssigned", label: "งานที่ได้รับมอบหมาย" },
   { key: "taskStatus", column: "lineNotifyTaskStatus", label: "สถานะงานของฉันเปลี่ยน" },
   { key: "mention", column: "lineNotifyMention", label: "ถูกพูดถึง (@) ในคอมเมนต์" },
-  { key: "leaveDecision", column: "lineNotifyLeaveDecision", label: "ผลอนุมัติการลา (ของฉัน)" },
-  { key: "leaveRequest", column: "lineNotifyLeaveRequest", label: "คำขอลาใหม่ (สำหรับผู้อนุมัติ)" },
+  // Leave DM prefs (leaveDecision/leaveRequest) were retired with the approval
+  // flow — "แจ้งติดธุระ" is announced to the group only. The DB columns remain
+  // (dormant) for old rows; they're just no longer offered as toggles.
   { key: "reportReminder", column: "lineNotifyReportReminder", label: "เตือนส่งรายงานประจำวัน" },
   { key: "dailyDigest", column: "lineNotifyDailyDigest", label: "สรุปงานเช้า (ครบกำหนด/เลยกำหนด)" },
 ] as const;

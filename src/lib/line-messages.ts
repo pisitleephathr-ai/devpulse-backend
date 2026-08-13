@@ -60,7 +60,7 @@ export function botHelpFlex(): { altText: string; contents: LineMessage } {
     ["📋", "งานของฉัน"],
     ["⚠️", "งานเลยกำหนด"],
     ["📅", "งานครบกำหนดวันนี้"],
-    ["🌴", "ใครลาวันนี้"],
+    ["🗓️", "ใครติดธุระวันนี้"],
     ["📊", "สถานะรายงานวันนี้"],
     ["✅", "เสร็จ <ชื่องาน> — ปิดงานให้"],
     ["👥", "งานของ <ชื่อ> — สำหรับหัวหน้า"],
@@ -429,14 +429,14 @@ type LeaveCardInput = {
 };
 
 const LEAVE_DECISION = {
-  PENDING: { header: "📝 คำขอลาใหม่", color: "#d97706", statusLabel: "รออนุมัติ", statusColor: "#d97706" },
-  APPROVED: { header: "✅ อนุมัติการลา", color: "#16a34a", statusLabel: "อนุมัติแล้ว", statusColor: "#16a34a" },
-  REJECTED: { header: "🚫 ไม่อนุมัติการลา", color: "#dc2626", statusLabel: "ไม่อนุมัติ", statusColor: "#dc2626" },
+  // Self-service "แจ้งติดธุระ": APPROVED = active declaration, CANCELLED = withdrawn.
+  APPROVED: { header: "🗓️ แจ้งติดธุระ", color: "#0d9488", statusLabel: "ติดธุระ", statusColor: "#0d9488" },
+  CANCELLED: { header: "↩️ ยกเลิกติดธุระ", color: "#71717a", statusLabel: "ยกเลิก", statusColor: "#71717a" },
 } as const;
 
-/** Flex card for a leave request submitted / approved / rejected. */
+/** Group Flex card announcing a busy declaration / its cancellation. */
 export function leaveFlex(
-  status: "PENDING" | "APPROVED" | "REJECTED",
+  status: "APPROVED" | "CANCELLED",
   t: LeaveCardInput,
   url?: string
 ): { altText: string; contents: LineMessage } {
@@ -449,112 +449,13 @@ export function leaveFlex(
     row("สถานะ", meta.statusLabel, meta.statusColor),
   ];
   if (t.reason && t.reason.trim()) body.push(row("เหตุผล", t.reason.trim()));
-  body.push({ type: "separator", margin: "md", color: HAIRLINE });
-  body.push(
-    actorLine(
-      t.actorName ? `${status === "APPROVED" ? "อนุมัติโดย" : status === "REJECTED" ? "ปฏิเสธโดย" : "โดย"} ${t.actorName}` : "รอผู้จัดการพิจารณา"
-    )
-  );
 
   const contents = shell(meta.header, body, {
     url,
     headerColor: meta.color,
-    buttonLabel: "เปิดดูคำขอ ↗",
+    buttonLabel: "เปิดดู ↗",
   });
   return { altText: `${meta.header}: ${t.userName} (${leaveTypeLabel(t.type)})`, contents };
-}
-
-/**
- * Like the PENDING leaveFlex, but with in-card อนุมัติ/ปฏิเสธ postback buttons
- * (`cmd=leave_approve&id=…` / `cmd=leave_reject&id=…`). DM'd to approvers so they
- * can decide right from LINE. The webhook verifies the tapper is an approver.
- */
-export function leaveApprovalFlex(
-  t: LeaveCardInput,
-  leaveId: string,
-  url?: string
-): { altText: string; contents: LineMessage } {
-  const meta = LEAVE_DECISION.PENDING;
-  const body: LineMessage[] = [
-    titleLine(t.userName),
-    row("ประเภท", leaveTypeLabel(t.type)),
-    row("ช่วงวันที่", dateRange(t.startDate, t.endDate)),
-    row("จำนวน", leaveDaysLabel(t.days, t.halfDayPeriod)),
-    row("สถานะ", meta.statusLabel, meta.statusColor),
-  ];
-  if (t.reason && t.reason.trim()) body.push(row("เหตุผล", t.reason.trim()));
-
-  const footerButtons: LineMessage[] = [
-    {
-      type: "box",
-      layout: "horizontal",
-      spacing: "sm",
-      contents: [
-        {
-          type: "button",
-          style: "primary",
-          color: "#16a34a",
-          height: "sm",
-          action: {
-            type: "postback",
-            label: "✅ อนุมัติ",
-            data: `cmd=leave_approve&id=${leaveId}`,
-            displayText: "อนุมัติคำขอลา",
-          },
-        },
-        {
-          type: "button",
-          style: "primary",
-          color: "#dc2626",
-          height: "sm",
-          action: {
-            type: "postback",
-            label: "❌ ปฏิเสธ",
-            data: `cmd=leave_reject&id=${leaveId}`,
-            displayText: "ปฏิเสธคำขอลา",
-          },
-        },
-      ],
-    },
-  ];
-  if (url) {
-    footerButtons.push({
-      type: "button",
-      style: "link",
-      height: "sm",
-      action: { type: "uri", label: "เปิดดูในเว็บ ↗", uri: url },
-    });
-  }
-
-  const contents: LineMessage = {
-    type: "bubble",
-    size: "kilo",
-    header: {
-      type: "box",
-      layout: "vertical",
-      backgroundColor: meta.color,
-      paddingAll: "16px",
-      contents: [
-        { type: "text", text: meta.header, color: "#ffffff", size: "sm", weight: "bold" },
-      ],
-    },
-    body: {
-      type: "box",
-      layout: "vertical",
-      spacing: "md",
-      paddingAll: "16px",
-      contents: body,
-    },
-    footer: {
-      type: "box",
-      layout: "vertical",
-      spacing: "sm",
-      paddingAll: "12px",
-      paddingTop: "none",
-      contents: footerButtons,
-    },
-  };
-  return { altText: `ขออนุมัติลา: ${t.userName} (${leaveTypeLabel(t.type)})`, contents };
 }
 
 /** One "person on leave" line: bold name + muted "type · duration". */
@@ -572,26 +473,26 @@ function leaveEntryLine(name: string, detail: string): LineMessage {
 
 export type LeaveTodayEntry = { name: string; type: string; days: number; half?: string | null };
 
-/** Flex card summarizing everyone on approved leave today. */
+/** Flex card summarizing everyone with an active busy declaration today. */
 export function leaveTodayFlex(
   today: Date,
   entries: LeaveTodayEntry[],
   url?: string
 ): { altText: string; contents: LineMessage } {
   const body: LineMessage[] = [
-    titleLine(`วันนี้มีคนลา ${entries.length} คน`),
+    titleLine(`วันนี้มีคนติดธุระ ${entries.length} คน`),
     { type: "text", text: thaiDate(today), color: MUTED, size: "xs" },
     { type: "separator", margin: "md", color: HAIRLINE },
     ...entries.map((e) =>
       leaveEntryLine(e.name, `${leaveTypeLabel(e.type)} · ${leaveDaysLabel(e.days, e.half)}`)
     ),
   ];
-  const contents = shell("🌴 วันนี้มีใครลา", body, {
+  const contents = shell("🗓️ วันนี้มีใครติดธุระ", body, {
     url,
     headerColor: "#0891b2",
     buttonLabel: "เปิดปฏิทินทีม ↗",
   });
-  return { altText: `🌴 วันนี้มีคนลา ${entries.length} คน`, contents };
+  return { altText: `🗓️ วันนี้มีคนติดธุระ ${entries.length} คน`, contents };
 }
 
 /** Trim + collapse whitespace and cap a snippet's length for a compact card. */

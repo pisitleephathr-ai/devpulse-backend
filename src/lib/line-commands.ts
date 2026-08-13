@@ -47,7 +47,7 @@ export function matchTextCommand(raw: string): BotCommand | null {
   if (/(เมนู|คำสั่ง|ช่วยเหลือ|help|menu|\?)/.test(t)) return "help";
   if (/(เลยกำหนด|เกินกำหนด|ค้าง|overdue|late)/.test(t)) return "my_overdue";
   if (/(ครบกำหนด|กำหนดส่ง|due|deadline)/.test(t)) return "due_today";
-  if (/(ใครลา|ลาวันนี้|วันลา|on leave|leave)/.test(t)) return "leave_today";
+  if (/(ใครติดธุระ|ติดธุระ|ใครลา|ลาวันนี้|วันลา|on leave|leave)/.test(t)) return "leave_today";
   if (/(รายงาน|report)/.test(t)) return "report_today";
   if (/(งาน|task|my task)/.test(t)) return "my_tasks";
   if (/(สวัสดี|hello|hi|hey|เริ่ม|start)/.test(t)) return "help";
@@ -208,7 +208,7 @@ async function dueToday(lineUserId: string): Promise<LineMessage[]> {
   ];
 }
 
-/** "ใครลาวันนี้" — everyone on approved leave covering today. */
+/** "ใครติดธุระวันนี้" — everyone with an active declaration covering today. */
 async function leaveToday(): Promise<LineMessage[]> {
   const { gte, lt } = bangkokDateToUtcRange(getBangkokDateString());
   const leaves = await prisma.leaveRequest.findMany({
@@ -217,7 +217,7 @@ async function leaveToday(): Promise<LineMessage[]> {
     orderBy: { user: { name: "asc" } },
   });
   if (!leaves.length)
-    return card("🌴 วันนี้ไม่มีใครลา", "#0891b2", "ทุกคนอยู่ครบวันนี้ครับ");
+    return card("🗓️ วันนี้ไม่มีใครติดธุระ", "#0891b2", "ทุกคนอยู่ครบวันนี้ครับ");
   const entries: LeaveTodayEntry[] = leaves.map((l) => ({
     name: l.user.name,
     type: l.type,
