@@ -443,7 +443,6 @@ export function leaveFlex(
   const meta = LEAVE_DECISION[status];
   const body: LineMessage[] = [
     titleLine(t.userName),
-    row("ประเภท", leaveTypeLabel(t.type)),
     row("ช่วงวันที่", dateRange(t.startDate, t.endDate)),
     row("จำนวน", leaveDaysLabel(t.days, t.halfDayPeriod)),
     row("สถานะ", meta.statusLabel, meta.statusColor),
@@ -455,7 +454,7 @@ export function leaveFlex(
     headerColor: meta.color,
     buttonLabel: "เปิดดู ↗",
   });
-  return { altText: `${meta.header}: ${t.userName} (${leaveTypeLabel(t.type)})`, contents };
+  return { altText: `${meta.header}: ${t.userName}`, contents };
 }
 
 /** One "person on leave" line: bold name + muted "type · duration". */

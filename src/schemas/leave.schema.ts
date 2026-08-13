@@ -10,7 +10,9 @@ const halfDayPeriod = z.enum(["MORNING", "AFTERNOON"]);
 
 export const createLeaveSchema = z
   .object({
-    type,
+    // Optional — "แจ้งติดธุระ" has a single implicit category; the controller
+    // defaults it. Kept nullable so the DB column (and old rows) stay valid.
+    type: type.optional(),
     startDate: z.coerce.date(),
     endDate: z.coerce.date(),
     reason: z.string().min(1, "กรุณาระบุเหตุผล"),
