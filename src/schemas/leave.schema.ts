@@ -15,7 +15,8 @@ export const createLeaveSchema = z
     type: type.optional(),
     startDate: z.coerce.date(),
     endDate: z.coerce.date(),
-    reason: z.string().min(1, "กรุณาระบุเหตุผล"),
+    // Optional — a note is helpful but not required to declare being busy.
+    reason: z.string().max(500).optional(),
     /** managers may file on behalf of another member */
     userId: z.string().min(1).optional(),
     /** MORNING/AFTERNOON = half day; omit for a full-day leave */

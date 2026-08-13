@@ -117,7 +117,7 @@ export async function createLeave(req: Request, res: Response) {
         endDate: data.endDate,
         days: computeDays(data.startDate, data.endDate, data.halfDayPeriod),
         halfDayPeriod: data.halfDayPeriod ?? null,
-        reason: data.reason.trim(),
+        reason: data.reason?.trim() || "",
         // Active immediately — self-service, no approval.
         status: "APPROVED",
       },
