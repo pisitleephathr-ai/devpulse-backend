@@ -15,15 +15,9 @@ const include = {
   reviewedBy: { select: userMiniSelect },
 };
 
-// Legacy enum-code → Thai. New types already carry their (freeform) name, so
-// unknown codes fall through to the value itself.
-const TYPE_LABEL: Record<string, string> = {
-  VACATION: "ลาพักร้อน",
-  SICK: "ลาป่วย",
-  PERSONAL: "ลากิจ",
-  PARENTAL: "ลาเลี้ยงดูบุตร",
-};
-const typeLabel = (t: string) => TYPE_LABEL[t] ?? t;
+// "แจ้งติดธุระ" has a single implicit category — new records default to this
+// when the client sends no type. The DB column stays freeform for old rows.
+const DEFAULT_TYPE = "ติดธุระ";
 
 function inclusiveDays(start: Date, end: Date) {
   const ms = end.getTime() - start.getTime();
@@ -118,7 +112,7 @@ export async function createLeave(req: Request, res: Response) {
     const created = await tx.leaveRequest.create({
       data: {
         userId,
-        type: data.type,
+        type: data.type?.trim() || DEFAULT_TYPE,
         startDate: data.startDate,
         endDate: data.endDate,
         days: computeDays(data.startDate, data.endDate, data.halfDayPeriod),
@@ -133,7 +127,7 @@ export async function createLeave(req: Request, res: Response) {
       {
         userId: req.user!.id,
         action: "leave.create",
-        message: `${created.user.name} แจ้งติดธุระ (${typeLabel(created.type)})`,
+        message: `${created.user.name} แจ้งติดธุระ`,
         entityType: "leave",
         entityId: created.id,
       },
@@ -190,7 +184,7 @@ export async function cancelLeave(req: Request, res: Response) {
       {
         userId: req.user!.id,
         action: "leave.cancel",
-        message: `${updated.user.name} ยกเลิกติดธุระ (${typeLabel(updated.type)})`,
+        message: `${updated.user.name} ยกเลิกติดธุระ`,
         entityType: "leave",
         entityId: updated.id,
       },
@@ -228,7 +222,7 @@ export async function deleteLeave(req: Request, res: Response) {
   await logActivity({
     userId: req.user!.id,
     action: "leave.delete",
-    message: `ลบรายการติดธุระ (${typeLabel(existing.type)}) ของ ${existing.user.name}`,
+    message: `ลบรายการติดธุระของ ${existing.user.name}`,
     entityType: "leave",
     entityId: existing.id,
   });
