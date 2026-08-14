@@ -37,6 +37,10 @@ const schema = z.object({
   // "DevPulse <noreply@trrappstore.com>". Falls back to the Resend sandbox.
   RESEND_API_KEY: z.string().optional(),
   MAIL_FROM: z.string().optional(),
+  // Optional Reply-To (e.g. "support@yourdomain"). When set, recipients replying
+  // reach a real inbox instead of the no-reply sender — also a small
+  // deliverability signal. Omitted from the message when unset.
+  MAIL_REPLY_TO: z.string().optional(),
   // Cloudinary — signed direct upload for task attachments (optional; the
   // attachment-upload endpoints return 503 until all three are configured).
   // The API secret is server-only and must NEVER be exposed to the frontend,

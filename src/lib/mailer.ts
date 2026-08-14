@@ -17,11 +17,23 @@ export async function sendMail(input: {
   to: string;
   subject: string;
   html: string;
+  /** plain-text alternative — always send one; HTML-only mail scores as spam */
+  text?: string;
 }): Promise<{ ok: boolean; error?: string }> {
   if (!env.RESEND_API_KEY) return { ok: false, error: "mailer not configured" };
   // MAIL_FROM must be a verified Resend sender; the sandbox address only
   // delivers to the account owner's verified email (fine for testing).
   const from = env.MAIL_FROM || "DevPulse <onboarding@resend.dev>";
+  // Include a text/plain part (multipart) for deliverability, plus an optional
+  // Reply-To when configured.
+  const body: Record<string, unknown> = {
+    from,
+    to: [input.to],
+    subject: input.subject,
+    html: input.html,
+  };
+  if (input.text) body.text = input.text;
+  if (env.MAIL_REPLY_TO) body.reply_to = env.MAIL_REPLY_TO;
   try {
     const res = await fetch(RESEND_URL, {
       method: "POST",
@@ -29,7 +41,7 @@ export async function sendMail(input: {
         Authorization: `Bearer ${env.RESEND_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from, to: [input.to], subject: input.subject, html: input.html }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
@@ -52,10 +64,21 @@ export function welcomeEmailHtml(input: {
   name: string;
   email: string;
   password: string;
-}): { subject: string; html: string } {
+}): { subject: string; html: string; text: string } {
   const base = appBaseUrl();
   const loginUrl = base ? `${base}/login` : "";
   const subject = "ยินดีต้อนรับสู่ DevPulse 🎉";
+  const text = [
+    `สวัสดีคุณ${input.name}`,
+    "",
+    "บัญชี DevPulse ของคุณถูกสร้างเรียบร้อยแล้ว ใช้ข้อมูลด้านล่างเพื่อเข้าสู่ระบบ และแนะนำให้เปลี่ยนรหัสผ่านหลังเข้าครั้งแรก",
+    "",
+    `อีเมล: ${input.email}`,
+    `รหัสผ่านเริ่มต้น: ${input.password}`,
+    ...(loginUrl ? ["", `เข้าสู่ระบบ: ${loginUrl}`] : []),
+    "",
+    "หากคุณไม่ได้เป็นผู้ร้องขอบัญชีนี้ กรุณาละเว้นอีเมลฉบับนี้",
+  ].join("\n");
   const button = loginUrl
     ? `<a href="${esc(loginUrl)}" style="display:inline-block;background:#0d9488;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 28px;border-radius:10px;font-size:15px">เข้าสู่ระบบ</a>`
     : "";
@@ -82,7 +105,7 @@ export function welcomeEmailHtml(input: {
       </div>
     </div>
   </div></body></html>`;
-  return { subject, html };
+  return { subject, html, text };
 }
 
 /** Branded password-reset email: a single time-limited button + fallback link. */
@@ -91,9 +114,18 @@ export function passwordResetEmailHtml(input: {
   resetUrl: string;
   /** how long the link is valid, in minutes (for the copy) */
   ttlMinutes: number;
-}): { subject: string; html: string } {
+}): { subject: string; html: string; text: string } {
   const subject = "ตั้งรหัสผ่านใหม่ DevPulse";
   const url = esc(input.resetUrl);
+  const text = [
+    `สวัสดีคุณ${input.name}`,
+    "",
+    `เราได้รับคำขอตั้งรหัสผ่านใหม่สำหรับบัญชีของคุณ เปิดลิงก์ด้านล่างเพื่อตั้งรหัสผ่านใหม่ (ใช้ได้ภายใน ${input.ttlMinutes} นาที และใช้ได้เพียงครั้งเดียว):`,
+    "",
+    input.resetUrl,
+    "",
+    "หากคุณไม่ได้เป็นผู้ร้องขอ กรุณาละเว้นอีเมลฉบับนี้ รหัสผ่านเดิมของคุณจะยังใช้งานได้ตามปกติ",
+  ].join("\n");
   const html = `<!doctype html><html><body style="margin:0;background:#f1f5f9;font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#0f172a">
   <div style="max-width:520px;margin:0 auto;padding:24px">
     <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden">
@@ -118,5 +150,5 @@ export function passwordResetEmailHtml(input: {
       </div>
     </div>
   </div></body></html>`;
-  return { subject, html };
+  return { subject, html, text };
 }
