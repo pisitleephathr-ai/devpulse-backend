@@ -83,7 +83,7 @@ export async function forgotPassword(req: Request, res: Response) {
     // Fire-and-forget: don't await the (up-to-8s) send. Awaiting it would both
     // slow the response and widen a timing side-channel for account enumeration.
     // sendMail is best-effort and never throws, but guard anyway.
-    void sendMail({ to: user.email, subject: mail.subject, html: mail.html }).catch(
+    void sendMail({ to: user.email, subject: mail.subject, html: mail.html, text: mail.text }).catch(
       (err) => console.warn("[auth] reset email send error:", err)
     );
   } else if (user && (!base || !isMailerConfigured())) {

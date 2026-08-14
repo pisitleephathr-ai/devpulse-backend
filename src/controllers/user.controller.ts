@@ -104,7 +104,7 @@ export async function createUser(req: Request, res: Response) {
       email: user.email,
       password: data.password,
     });
-    const r = await sendMail({ to: user.email, subject: mail.subject, html: mail.html });
+    const r = await sendMail({ to: user.email, subject: mail.subject, html: mail.html, text: mail.text });
     emailed = r.ok;
   }
 
